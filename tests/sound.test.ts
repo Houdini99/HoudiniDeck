@@ -8,7 +8,15 @@ import { soundExecutor } from '../server/actions/sound.ts';
 import { ActionError } from '../server/actions/executor.ts';
 import { ExtStore } from '../server/ext-store.ts';
 import { silentLogger } from '../server/log.ts';
-import { SoundPlayer, programSoundBackend, windowsSoundBackend, type Playback, type SoundBackend, type SoundProgram } from '../server/system/sound.ts';
+import {
+  LINUX_SOUND_PROGRAMS,
+  SoundPlayer,
+  programSoundBackend,
+  windowsSoundBackend,
+  type Playback,
+  type SoundBackend,
+  type SoundProgram,
+} from '../server/system/sound.ts';
 import type { WinRequester } from '../server/system/windows/helper.ts';
 import { sniffSound } from '../server/uploads.ts';
 import type { ActionOf } from '../shared/schema.ts';
@@ -42,8 +50,7 @@ test('the first installed player is used; one that fails right away reports why'
   await assert.rejects(none.start('/x.mp3', 1, () => {}), /No sound player found/);
 });
 
-test('player arguments: the file as its own argument and the volume in each program’s scale', async () => {
-  const { LINUX_SOUND_PROGRAMS } = await import('../server/system/sound.ts');
+test('player arguments: the file as its own argument and the volume in each program’s scale', () => {
   const args = Object.fromEntries(LINUX_SOUND_PROGRAMS.map((p) => [p.cmd, p.args('/data/uploads/a.mp3', 0.5)]));
   assert.deepEqual(args['pw-play'], ['--volume=0.50', '/data/uploads/a.mp3']);
   assert.deepEqual(args.paplay, ['--volume=32768', '/data/uploads/a.mp3']);

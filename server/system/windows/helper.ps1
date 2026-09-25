@@ -1,5 +1,5 @@
-# The deck's helper on Windows: the default speakers and microphone (Core Audio), key presses
-# (SendInput), media players (the media sessions Windows shows next to its volume slider) and
+# The deck's helper on Windows: the default speakers and microphone (Core Audio), key presses and
+# typed text (SendInput), media players (the media sessions Windows shows next to its volume slider) and
 # sound clips for Play Sound buttons (winmm's MCI).
 # The server starts one copy (see helper.ts) and talks to it in JSON lines: requests on stdin,
 # answers and media updates on stdout.
@@ -158,7 +158,8 @@ namespace HoudiniDeck
         [DllImport("user32.dll", SetLastError = true)]
         static extern uint SendInput(uint count, INPUT[] inputs, int size);
 
-        const uint INPUT_KEYBOARD = 1, KEYEVENTF_EXTENDEDKEY = 1, KEYEVENTF_KEYUP = 2, KEYEVENTF_SCANCODE = 8;
+        const uint INPUT_KEYBOARD = 1, KEYEVENTF_EXTENDEDKEY = 1, KEYEVENTF_KEYUP = 2, KEYEVENTF_UNICODE = 4, KEYEVENTF_SCANCODE = 8;
+        const ushort VK_TAB = 0x09, VK_RETURN = 0x0D;
 
         // events: [scan code, extended (0/1), virtual-key code (0: none), up (0/1)] for each key event.
         // Without a virtual-key code the key goes by its scan code, which Windows maps through the
@@ -183,6 +184,36 @@ namespace HoudiniDeck
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
+            }
+        }
+
+        // Types text as characters (not keys), so the keyboard layout doesn't matter: every character,
+        // accents and emoji included, arrives as it is. New lines become Enter and tabs Tab.
+        public static void Type(string text, bool enter, int gapMs)
+        {
+            foreach (char c in text)
+            {
+                if (c == '\r') continue;
+                if (c == '\n' || c == '\t') Tap(c == '\n' ? VK_RETURN : VK_TAB, 0, 0);
+                else Tap(0, c, KEYEVENTF_UNICODE);
+                if (gapMs > 0) Thread.Sleep(gapMs);
+            }
+            if (enter) Tap(VK_RETURN, 0, 0);
+        }
+
+        static void Tap(ushort vk, ushort scan, uint flags)
+        {
+            INPUT[] inputs = new INPUT[2];
+            for (int i = 0; i < 2; i++)
+            {
+                inputs[i].type = INPUT_KEYBOARD;
+                inputs[i].u.ki.wVk = vk;
+                inputs[i].u.ki.wScan = scan;
+                inputs[i].u.ki.dwFlags = i == 0 ? flags : flags | KEYEVENTF_KEYUP;
+            }
+            if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             }
         }
     }
@@ -425,6 +456,10 @@ function Invoke-Request($request) {
     }
     'keys' {
       [HoudiniDeck.Keys]::Send([int[]]@($request.events), 10, 50)
+      return $null
+    }
+    'text' {
+      [HoudiniDeck.Keys]::Type([string]$request.text, [bool]$request.enter, 2)
       return $null
     }
     'sound.play' {

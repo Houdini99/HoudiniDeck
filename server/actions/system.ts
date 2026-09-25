@@ -1,6 +1,6 @@
 // The system.* family: the PC itself. The default speakers and microphone (via wpctl), key presses
-// (via ydotool), web pages in its browser, and shell commands (only when the server was started with
-// STREAMDECK_ENABLE_COMMANDS=1).
+// and typed text (via ydotool), web pages in its browser, and shell commands (only when the server was
+// started with STREAMDECK_ENABLE_COMMANDS=1).
 // On Windows, the helper does the speakers, microphone and keys (see ../system/windows/).
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
@@ -8,6 +8,8 @@ import { ydotoolKeyArgs } from '../../shared/keys.ts';
 import { DEFAULT_COMMAND_TIMEOUT_MS, commandNotFound, commandProgram, launchCommand, outputTail, runCommand } from '../system/command.ts';
 import { openUrl } from '../system/open-url.ts';
 import type { Launcher, RunResult, Runner } from '../system/process.ts';
+import { pasteText } from '../system/text.ts';
+import { ydotoolKey } from '../system/ydotool.ts';
 import type { WinRequester } from '../system/windows/helper.ts';
 import { pressWindowsKeys } from '../system/windows/keys.ts';
 import { setWindowsVolume } from '../system/windows/volume.ts';
@@ -38,6 +40,10 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
         return deps.windows ? pressWindowsKeys(deps.windows, action, phase) : pressKeys(action, phase, deps.run);
       case 'system.openUrl':
         return openUrl(action.url, deps.launch);
+      case 'system.text':
+        // Windows types the characters themselves; Linux pastes them (see ../system/text.ts).
+        if (deps.windows) return void (await deps.windows.request('text', { text: action.text, enter: !!action.enter }));
+        return pasteText(action.text, !!action.enter, { run: deps.run, launch: deps.launch });
       default:
         throw new Error(`No executor for ${(action satisfies never as { type: string }).type}`);
     }
@@ -63,21 +69,9 @@ export function volumeArgs(action: ActionOf<'system.volume'>, phase: Phase): str
 }
 
 /** Keys via ydotool; hold buttons press on down and release on up. */
-async function pressKeys(action: ActionOf<'system.hotkey'>, phase: Phase, run: Runner): Promise<void> {
+function pressKeys(action: ActionOf<'system.hotkey'>, phase: Phase, run: Runner): Promise<void> {
   const args = phase.kind === 'hold' ? ydotoolKeyArgs(action.keys, phase.down ? 'down' : 'up') : ydotoolKeyArgs(action.keys);
-  let res: RunResult;
-  try {
-    res = await run('ydotool', ['key', ...args]);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new ActionError('ydotool is not installed on the PC (see the README)');
-    throw err;
-  }
-  if (res.code === 0) return;
-  const output = `${res.stdout}\n${res.stderr}`; // ydotool reports connection problems on stdout
-  if (/failed to connect socket/.test(output)) {
-    throw new ActionError('ydotool’s background service isn’t running. Start it with: systemctl --user enable --now ydotool');
-  }
-  throw new ActionError(`ydotool: ${outputTail(output, 2) || `exit code ${res.code}`}`);
+  return ydotoolKey(args, run);
 }
 
 async function runCommandAction(action: ActionOf<'system.command'>, enabled: boolean): Promise<void> {

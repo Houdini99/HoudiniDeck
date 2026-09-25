@@ -256,6 +256,7 @@ export function actionStatus(action: Action, ctx: VisualCtx, buttonId?: string):
     case 'kde.shortcut':
     case 'system.command':
     case 'system.openUrl':
+    case 'system.text':
       return { active: false };
     case 'toggle':
       return { active: !!buttonId && !!ext.toggles[buttonId] };

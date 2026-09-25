@@ -717,6 +717,23 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'kde.shortcut', component: '', shortcut: '' }),
     autoLabel: (a) => a.title || a.shortcut || 'KDE Shortcut',
   },
+  'system.text': {
+    type: 'system.text',
+    label: 'Type Text',
+    description: 'Type a text into the window that has focus, e.g. a chat message or your e-mail address.',
+    category: 'System',
+    platforms: ['linux', 'win32'],
+    icon: mdi('form-textbox'),
+    fields: [
+      { key: 'text', label: 'Text', kind: 'multiline', placeholder: 'e.g. Thanks for the follow! ❤️' },
+      { key: 'enter', label: 'Press Enter afterwards', kind: 'checkbox', hint: 'To send it, e.g. in a chat.' },
+    ],
+    create: () => ({ type: 'system.text', text: '' }),
+    autoLabel: (a) => {
+      const line = a.text.trim().split('\n')[0];
+      return line.length > 24 ? `${line.slice(0, 23)}…` : line || 'Type Text';
+    },
+  },
   'system.openUrl': {
     type: 'system.openUrl',
     label: 'Open Website',

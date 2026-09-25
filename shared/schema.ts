@@ -136,6 +136,13 @@ const StepActionSchema = z.discriminatedUnion('type', [
     /** Its friendly name, shown as the default label. */
     title: z.string().max(200).optional(),
   }),
+  /** Type text into whatever window has focus (Windows: as typed characters; Linux: pasted). */
+  z.object({
+    type: z.literal('system.text'),
+    text: z.string().min(1, 'Type some text').max(2000),
+    /** Press Enter afterwards (e.g. to send a chat message). */
+    enter: z.boolean().optional(),
+  }),
   /** Open a web page in the PC's default browser. */
   z.object({ type: z.literal('system.openUrl'), url: WebUrl }),
   z.object({

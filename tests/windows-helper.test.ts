@@ -66,6 +66,9 @@ test('the Windows helper starts and answers every kind of request', { skip, time
     t.diagnostic(`SendInput refused: ${err.message}`);
   }
 
+  // Typing nothing sends nothing, but reaches the C# that types.
+  assert.equal(await helper.request('text', { text: '', enter: false }), null);
+
   // Sounds: a PC without speakers (like a CI machine) may refuse to open one; then it must say so.
   const tmp = await tempDir();
   t.after(tmp.cleanup);
