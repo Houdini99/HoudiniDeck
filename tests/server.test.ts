@@ -409,3 +409,61 @@ test('MP3 and WAV sounds can be uploaded and are served as audio', async () => {
   assert.equal(served.headers['content-type'], 'audio/wav');
   assert.equal((await app.http.inject({ method: 'GET', url: '/uploads/aaaaaaaaaaaaaaaa.ogg' })).statusCode, 404);
 });
+
+test('other programs can press buttons over HTTP with the access key', async () => {
+  const c = connect(`localhost:${app.port}`);
+  await c.next('init');
+  const added = await c.request({ t: 'op', op: { op: 'page.add', name: 'API', rows: 1, cols: 4 } });
+  const pageId = ((added.ok && added.data) as { pageId: string }).pageId;
+  const put = async (slot: string, button: Record<string, unknown>) => {
+    const res = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot, button } });
+    return ((res.ok && res.data) as { buttonId: string }).buttonId;
+  };
+  const counter = await put('0-0', { label: 'Wins', tap: { type: 'counter', mode: 'add' }, longPress: { type: 'counter', mode: 'set', value: 10 } });
+  const ptt = await put('0-1', { tap: { type: 'obs.mute', input: { name: 'Mic/Aux' }, mode: 'pushToTalk' } });
+  const broken = await put('0-2', { tap: { type: 'obs.scene', scene: { name: 'No Such Scene' }, target: 'auto' } });
+  c.ws.close();
+
+  const lan = { host: '192.168.1.20:3325' };
+  const key = { ...lan, authorization: `Bearer ${app.settingsStore.settings.accessKey}` };
+  const press = (id: string, headers: Record<string, string>, query = '') =>
+    app.http.inject({ method: 'POST', url: `/api/buttons/${id}/press${query}`, headers });
+
+  assert.equal((await press(counter, lan)).statusCode, 401, 'LAN callers need the key');
+  assert.equal((await press(counter, { ...key, origin: 'http://evil.example' })).statusCode, 403, 'other websites are refused');
+  const ok = await press(counter, { ...key, 'content-type': 'application/json' });
+  assert.equal(ok.statusCode, 200, ok.body);
+  assert.equal(app.ext.state.counters[counter], 1);
+  assert.equal((await press(counter, { host: `localhost:${app.port}` })).statusCode, 200, 'this PC needs no key');
+  assert.equal((await press(counter, key, '?which=longPress')).statusCode, 200);
+  assert.equal(app.ext.state.counters[counter], 10);
+
+  assert.equal((await press('nope', key)).statusCode, 404);
+  assert.match((await press(ptt, key)).json().error, /has to be held/);
+  const failed = await press(broken, key);
+  assert.equal(failed.statusCode, 422);
+  assert.match(failed.json().error, /not found/);
+
+  const list = await app.http.inject({ method: 'GET', url: '/api/buttons', headers: key });
+  const wins = (list.json().buttons as { id: string; label: string; page: string; tap: string }[]).find((b) => b.id === counter);
+  assert.deepEqual(wins && { label: wins.label, page: wins.page, tap: wins.tap }, { label: 'Wins', page: 'API', tap: 'counter' });
+  assert.equal((await app.http.inject({ method: 'GET', url: '/api/buttons', headers: lan })).statusCode, 401);
+});
+
+test('live scene pictures go to the browsers that show them', async () => {
+  const a = connect(`localhost:${app.port}`);
+  await a.next('init');
+  a.ws.send(JSON.stringify({ t: 'thumbs', scenes: ['BRB'] }));
+  const first = await a.next('thumbs');
+  assert.match(first.images.BRB, /^data:image\//);
+  assert.deepEqual(Object.keys(first.images), ['BRB']);
+
+  const b = connect(`localhost:${app.port}`);
+  await b.next('init');
+  const from = b.messages.length;
+  b.ws.send(JSON.stringify({ t: 'thumbs', scenes: ['BRB'] }));
+  assert.ok((await b.next('thumbs', from)).images.BRB, 'a picture taken already comes right away');
+  a.ws.close();
+  b.ws.close();
+  await waitFor(() => Object.keys(app.thumbnails.images).length === 0, 3000, 'pictures stop when no one looks');
+});

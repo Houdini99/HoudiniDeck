@@ -59,6 +59,8 @@ export type ServerMsg =
   | { t: 'obs'; obs: ObsState; serverTime: number }
   | { t: 'ext'; ext: ExtState }
   | { t: 'meters'; levels: Record<string, number> }
+  /** New live pictures of scenes (data: URLs by scene name), only for scenes this browser asked for. */
+  | { t: 'thumbs'; images: Record<string, string> }
   | { t: 'result'; reqId: number; ok: true; data?: unknown }
   | { t: 'result'; reqId: number; ok: false; error: string }
   | { t: 'toast'; level: ToastLevel; text: string; buttonId?: string };

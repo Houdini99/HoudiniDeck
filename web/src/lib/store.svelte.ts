@@ -64,6 +64,8 @@ class Store {
   ext = $state.raw<ExtState>(emptyExtState());
   info = $state.raw<ServerInfo | null>(null);
   meters = $state.raw<Record<string, number>>({});
+  /** Live pictures of the scenes that scene buttons on screen show (data: URLs by scene name). */
+  thumbs = $state.raw<Record<string, string>>({});
   /** Current time on the server's clock; ticks every second for output timers. */
   now = $state(Date.now());
   toasts = $state<Toast[]>([]);
@@ -79,7 +81,15 @@ class Store {
   dragOverPage = $state<string | null>(null);
 
   /** Everything a button needs to work out how it looks (only valid once deck and obs are set). */
-  visualCtx: VisualCtx = $derived({ obs: this.obs!, deck: this.deck!, ext: this.ext, now: this.now, commands: this.info?.commands, platform: this.info?.platform });
+  visualCtx: VisualCtx = $derived({
+    obs: this.obs!,
+    deck: this.deck!,
+    ext: this.ext,
+    now: this.now,
+    commands: this.info?.commands,
+    platform: this.info?.platform,
+    thumbs: this.thumbs,
+  });
 
   currentPage: Page | undefined = $derived.by(() => {
     const deck = this.deck;
@@ -93,6 +103,7 @@ class Store {
   private buildId: string | null = null;
   private readonly meterInterest = new Interest<string>((inputs) => this.socket.send({ t: 'meters', inputs }));
   private readonly statInterest = new Interest<StatMetric>((metrics) => this.socket.send({ t: 'stats', metrics }));
+  private readonly thumbInterest = new Interest<string>((scenes) => this.socket.send({ t: 'thumbs', scenes }));
   private tick?: ReturnType<typeof setTimeout>;
 
   start(): void {
@@ -134,6 +145,7 @@ class Store {
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
         this.meterInterest.flush();
         this.statInterest.flush();
+        this.thumbInterest.flush();
         break;
       case 'deck':
         this.deck = msg.deck;
@@ -148,6 +160,9 @@ class Store {
         break;
       case 'meters':
         this.meters = msg.levels;
+        break;
+      case 'thumbs':
+        this.thumbs = { ...this.thumbs, ...msg.images };
         break;
       case 'toast':
         this.toast(msg.text, msg.level);
@@ -199,7 +214,8 @@ class Store {
     this.socket.reconnect();
   }
 
-  // ---- what's on screen: faders subscribe to their input's level, stats tiles to their metric ----
+  // ---- what's on screen: faders subscribe to their input's level, stats tiles to their metric,
+  // scene buttons with a live picture to their scene ----
 
   subscribeMeter(input: string): () => void {
     return this.meterInterest.add(input);
@@ -207,6 +223,10 @@ class Store {
 
   subscribeStat(metric: StatMetric): () => void {
     return this.statInterest.add(metric);
+  }
+
+  subscribeThumb(scene: string): () => void {
+    return this.thumbInterest.add(scene);
   }
 
   // ---- navigation (per device) ---------------------------------------------------------------

@@ -225,6 +225,12 @@ export const ACTION_META: MetaTable = {
           { value: 'preview', label: 'Preview' },
         ],
       },
+      {
+        key: 'preview',
+        label: 'Show a live picture of the scene',
+        kind: 'checkbox',
+        hint: 'Updated every 2 seconds while the button is on a screen. OBS renders each picture, which costs it a little GPU and CPU.',
+      },
     ],
     create: () => ({ type: 'obs.scene', scene: noRef(), target: 'auto' }),
     autoLabel: (a, { obs }) => (obs && resolveScene(obs, a.scene)?.name) || a.scene.name || 'Scene',

@@ -18,6 +18,7 @@ import { Hub } from './hub.ts';
 import { createLogger } from './log.ts';
 import { reachableUrls } from './network.ts';
 import { ObsBridge } from './obs/bridge.ts';
+import { SceneThumbnails } from './obs/thumbnails.ts';
 import { DeckStore } from './store/deck-store.ts';
 import { SettingsStore } from './store/settings-store.ts';
 import { AudioWatcher } from './system/audio.ts';
@@ -39,6 +40,7 @@ export interface App {
   stats: StatsWatcher;
   states: ButtonStates;
   sounds: SoundPlayer;
+  thumbnails: SceneThumbnails;
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   /** Port actually bound (useful when env.port is 0). */
@@ -115,6 +117,7 @@ export async function startApp(env: Env): Promise<App> {
     log: actionLog,
   });
   const version = packageVersion();
+  const thumbnails = new SceneThumbnails({ obs: bridge, log: createLogger('thumbnails') });
   const hub = new Hub({
     env,
     deckStore,
@@ -124,6 +127,7 @@ export async function startApp(env: Env): Promise<App> {
     media,
     audio,
     stats,
+    thumbnails,
     kdeShortcuts: async () => (process.platform === 'linux' ? listKdeShortcuts(runProcess) : []),
     dispatcher,
     buildId: await readBuildId(env.webDist),
@@ -136,7 +140,17 @@ export async function startApp(env: Env): Promise<App> {
     }),
     log: createLogger('hub'),
   });
-  const http = await createHttpServer({ env, hub, bridge, media, settingsStore, log });
+  const http = await createHttpServer({
+    env,
+    hub,
+    bridge,
+    media,
+    settingsStore,
+    dispatcher,
+    getDeck: () => deckStore.deck,
+    labelCtx: () => ({ obs: bridge.state, deck: deckStore.deck, ext: ext.state }),
+    log,
+  });
   await http.listen({ host: env.host, port: env.port });
   const address = http.server.address();
   const port = typeof address === 'object' && address ? address.port : env.port;
@@ -152,6 +166,7 @@ export async function startApp(env: Env): Promise<App> {
     stats,
     states,
     sounds,
+    thumbnails,
     deckStore,
     settingsStore,
     port,
@@ -160,6 +175,7 @@ export async function startApp(env: Env): Promise<App> {
       media.stop();
       audio.stop();
       stats.stop();
+      thumbnails.stop();
       timerTexts.stop();
       sounds.stopAll();
       winHelper?.stop();

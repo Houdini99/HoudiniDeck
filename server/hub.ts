@@ -17,6 +17,7 @@ import type { ExtStore } from './ext-store.ts';
 import { errorMessage, type Logger } from './log.ts';
 import { pairingUrl } from './network.ts';
 import type { ObsBridge } from './obs/bridge.ts';
+import type { SceneThumbnails } from './obs/thumbnails.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
 import type { AudioWatcher } from './system/audio.ts';
@@ -37,6 +38,8 @@ interface Client {
   meters: Set<string>;
   /** Stats tiles on this client's screen. */
   stats: Set<StatMetric>;
+  /** Scenes whose live pictures this client shows. */
+  thumbs: Set<string>;
   authTimer?: NodeJS.Timeout;
 }
 
@@ -49,6 +52,7 @@ export interface HubDeps {
   media: MediaSource;
   audio: AudioWatcher;
   stats: StatsWatcher;
+  thumbnails: SceneThumbnails;
   /** Lists KDE's global shortcuts for the editor. */
   kdeShortcuts: () => Promise<KdeComponent[]>;
   dispatcher: Dispatcher;
@@ -74,6 +78,7 @@ export class Hub {
     deps.bridge.store.on('change', () => this.scheduleObsBroadcast());
     deps.bridge.on('meters', (levels) => this.sendMeters(levels));
     deps.ext.on('change', () => this.scheduleExtBroadcast());
+    deps.thumbnails.on('images', (changed) => this.sendThumbs(changed));
     this.pingTimer = setInterval(() => this.pingAll(), PING_INTERVAL_MS);
   }
 
@@ -106,6 +111,7 @@ export class Hub {
       alive: true,
       meters: new Set(),
       stats: new Set(),
+      thumbs: new Set(),
     };
     this.clients.set(client.id, client);
     ws.on('pong', () => (client.alive = true));
@@ -198,6 +204,16 @@ export class Hub {
         client.stats = new Set(msg.metrics);
         this.updateInterest();
         return;
+      case 'thumbs': {
+        const added = msg.scenes.filter((scene) => !client.thumbs.has(scene));
+        client.thumbs = new Set(msg.scenes);
+        this.updateInterest();
+        // Pictures taken already go out right away; the rest come with the next round.
+        const images = this.deps.thumbnails.images;
+        const known = Object.fromEntries(added.filter((scene) => images[scene]).map((scene) => [scene, images[scene]]));
+        if (Object.keys(known).length) this.send(client, { t: 'thumbs', images: known });
+        return;
+      }
     }
   }
 
@@ -337,6 +353,14 @@ export class Hub {
     }, EXT_BROADCAST_DEBOUNCE_MS);
   }
 
+  private sendThumbs(changed: Record<string, string>): void {
+    for (const client of this.clients.values()) {
+      if (!client.authed || client.thumbs.size === 0) continue;
+      const images = Object.fromEntries(Object.entries(changed).filter(([scene]) => client.thumbs.has(scene)));
+      if (Object.keys(images).length) this.send(client, { t: 'thumbs', images });
+    }
+  }
+
   private sendMeters(levels: Record<string, number>): void {
     for (const client of this.clients.values()) {
       if (!client.authed || client.meters.size === 0) continue;
@@ -346,7 +370,7 @@ export class Hub {
     }
   }
 
-  /** Background work (OBS polling, meters, media players, volume, stats) only runs while someone looks. */
+  /** Background work (OBS polling, meters, media players, volume, stats, scene pictures) only runs while someone looks. */
   private updateInterest(): void {
     const authed = [...this.clients.values()].filter((c) => c.authed);
     this.deps.bridge.setClientCount(authed.length);
@@ -354,6 +378,7 @@ export class Hub {
     this.deps.media.setActive(authed.length > 0);
     this.deps.audio.setActive(authed.length > 0);
     this.deps.stats.setWanted(authed.flatMap((c) => [...c.stats]));
+    this.deps.thumbnails.setWanted(authed.flatMap((c) => [...c.thumbs]));
   }
 
   private onClose(client: Client): void {

@@ -503,6 +503,19 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
     SaveSourceScreenshot: (d) => {
       findScene(d.sourceName);
     },
+    // Real OBS sends a JPEG or PNG of the source; the mock draws its name and the time instead.
+    GetSourceScreenshot: (d) => {
+      const name = String(d.sourceName);
+      if (!state.scenes.some((s) => s.name === name) && !state.inputs.some((i) => i.name === name)) findScene(name);
+      const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+      const escape = (t: string) => t.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">` +
+        `<rect width="320" height="180" fill="hsl(${hue} 45% 30%)"/><circle cx="${40 + ((Date.now() / 1000) % 10) * 24}" cy="140" r="14" fill="hsl(${hue} 70% 65%)"/>` +
+        `<text x="160" y="80" fill="#fff" font-family="sans-serif" font-size="30" text-anchor="middle">${escape(name)}</text>` +
+        `<text x="160" y="112" fill="#fff" opacity="0.7" font-family="sans-serif" font-size="18" text-anchor="middle">${new Date().toLocaleTimeString()}</text></svg>`;
+      return { imageData: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` };
+    },
     GetMediaInputStatus: (d) => ({ mediaState: findInput(d.inputName).mediaState ?? 'OBS_MEDIA_STATE_NONE', mediaDuration: 60_000, mediaCursor: 0 }),
     TriggerMediaInputAction: (d) => {
       const input = findInput(d.inputName);

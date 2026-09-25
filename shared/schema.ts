@@ -38,6 +38,8 @@ const StepActionSchema = z.discriminatedUnion('type', [
     type: z.literal('obs.scene'),
     scene: ObsRefSchema,
     target: z.enum(['auto', 'program', 'preview']).default('auto'),
+    /** Show a live picture of the scene on the button. */
+    preview: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('obs.sceneItem'),
@@ -363,6 +365,8 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
   /** The stats tiles this browser shows (polled only while someone looks at them). */
   z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),
+  /** The scenes whose live pictures this browser shows. */
+  z.object({ t: z.literal('thumbs'), scenes: z.array(z.string().max(200)).max(32) }),
 ]);
 
 export type ObsRef = z.infer<typeof ObsRefSchema>;

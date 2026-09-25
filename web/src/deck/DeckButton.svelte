@@ -1,6 +1,7 @@
 <script lang="ts">
   import { actionBehavior } from '$shared/actions-meta.ts';
   import { buttonVisual } from '$shared/feedback.ts';
+  import { resolveScene } from '$shared/obs-resolve.ts';
   import type { Button, Page } from '$shared/schema.ts';
   import { capturePointer } from '../lib/pointer.ts';
   import { haptic, prefs } from '../lib/prefs.svelte.ts';
@@ -15,10 +16,19 @@
   const behavior = $derived(button.tap ? actionBehavior(button.tap) : 'press');
   const visual = $derived(buttonVisual(button, store.visualCtx));
 
-  // Stats tiles tell the server they're on screen, so it reads those numbers.
+  // Stats tiles tell the server they're on screen, so it reads those numbers; so do scene buttons
+  // with a live picture (by the scene's current name, which follows renames in OBS).
   $effect(() => {
     const shown = button.tap ?? button.longPress;
     if (shown?.type === 'system.stats') return store.subscribeStat(shown.metric);
+  });
+  const previewScene = $derived.by(() => {
+    const tap = button.tap;
+    if (tap?.type !== 'obs.scene' || !tap.preview || button.icon || !store.obs) return undefined;
+    return resolveScene(store.obs, tap.scene)?.name;
+  });
+  $effect(() => {
+    if (previewScene) return store.subscribeThumb(previewScene);
   });
   const showLabel = $derived(prefs.showLabels && !button.hideLabel);
 

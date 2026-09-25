@@ -11,6 +11,7 @@
     missingFields,
   } from '$shared/actions-meta.ts';
   import { buttonVisual } from '$shared/feedback.ts';
+  import { resolveScene } from '$shared/obs-resolve.ts';
   import type { Action, ActionType, Appearance, Button, IconRef, NewButton } from '$shared/schema.ts';
   import ButtonFace from '../deck/ButtonFace.svelte';
   import Icon from '../lib/Icon.svelte';
@@ -18,6 +19,7 @@
   import UiIcon from '../lib/UiIcon.svelte';
   import ActionForm from './ActionForm.svelte';
   import ActionPicker from './ActionPicker.svelte';
+  import ButtonApi from './ButtonApi.svelte';
   import ColorPicker from './ColorPicker.svelte';
   import IconPicker from './IconPicker.svelte';
 
@@ -78,10 +80,12 @@
   const stateful = $derived(!!draft.tap && STATEFUL.has(draft.tap.type));
   const ownsGesture = $derived(!!draft.tap && ['hold', 'fader'].includes(actionBehavior(draft.tap)));
 
-  // The preview of a new stats tile needs its numbers too.
+  // The preview of a new stats tile needs its numbers too, and a scene button its live picture.
   $effect(() => {
     const tap = draft.tap;
     if (tap?.type === 'system.stats') return store.subscribeStat(tap.metric);
+    const scene = tap?.type === 'obs.scene' && tap.preview && store.obs ? resolveScene(store.obs, tap.scene)?.name : undefined;
+    if (scene) return store.subscribeThumb(scene);
   });
 
   // Close if the page disappears underneath us (deleted on another device).
@@ -364,6 +368,10 @@
             </select>
             <small class="hint">Copies the button as it was last saved.</small>
           </label>
+        {/if}
+
+        {#if existing?.tap || existing?.longPress}
+          <ButtonApi buttonId={existing.id} />
         {/if}
 
         {#if error}<p class="error">{error}</p>{/if}

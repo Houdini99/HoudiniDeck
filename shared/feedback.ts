@@ -19,6 +19,8 @@ export interface VisualCtx {
   commands?: boolean;
   /** The server's operating system; buttons it can't run (e.g. KDE shortcuts on Windows) are dimmed. */
   platform?: string;
+  /** Live pictures of scenes (data: URLs by scene name), for scene buttons that show one. */
+  thumbs?: Record<string, string>;
 }
 
 export type Tone = 'live' | 'rec' | 'paused' | 'busy';
@@ -138,9 +140,10 @@ export function actionStatus(action: Action, ctx: VisualCtx, buttonId?: string):
     case 'obs.scene': {
       const scene = resolveScene(obs, action.scene);
       if (!scene) return { active: false, missing: true };
-      if (scene.name === obs.programScene) return { active: true, ring: 'program' };
-      if (obs.studioMode && scene.name === obs.previewScene) return { active: false, ring: 'preview' };
-      return { active: false };
+      const image = action.preview ? ctx.thumbs?.[scene.name] : undefined;
+      if (scene.name === obs.programScene) return { active: true, ring: 'program', image };
+      if (obs.studioMode && scene.name === obs.previewScene) return { active: false, ring: 'preview', image };
+      return { active: false, image };
     }
     case 'obs.sceneItem': {
       const hit = resolveSceneItem(obs, action.scene, action.source);
