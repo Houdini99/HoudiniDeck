@@ -5,8 +5,9 @@ import type { ObsBridge } from '../obs/bridge.ts';
 import type { AudioWatcher } from '../system/audio.ts';
 import type { MediaWatcher } from '../system/media.ts';
 import type { Runner } from '../system/process.ts';
-import type { ExecutorRegistry } from './executor.ts';
+import { runAction, type ExecutorRegistry } from './executor.ts';
 import { httpExecutor } from './http.ts';
+import { macroExecutor } from './macro.ts';
 import { mediaExecutor } from './media.ts';
 import { obsExecutor } from './obs.ts';
 import { systemExecutor } from './system.ts';
@@ -25,12 +26,15 @@ export interface ExecutorDeps {
 }
 
 export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
-  return {
+  const registry: ExecutorRegistry = {
     obs: obsExecutor(deps.bridge, deps.screenshotDir),
     http: httpExecutor(deps.log),
     media: mediaExecutor(deps.run, deps.media),
     system: systemExecutor({ run: deps.run, audio: deps.audio }),
+    // Macro steps run through this same registry.
+    macro: macroExecutor({ run: (action, phase) => runAction(registry, action, phase), log: deps.log }),
     // Navigation happens in the browser, which never sends these; a stale client's press is a no-op.
     deck: async () => {},
   };
+  return registry;
 }

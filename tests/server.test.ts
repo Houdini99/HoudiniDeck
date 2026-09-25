@@ -256,3 +256,20 @@ test('webhook buttons call their URL when pressed', async () => {
     hook.close();
   }
 });
+
+test('a macro runs its steps on OBS in order', async () => {
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  const pageId = init.deck.pages[0].id;
+  const tap = {
+    type: 'macro',
+    steps: [{ action: { type: 'obs.scene', scene: { name: 'Just Chatting' }, target: 'program' } }, { delayMs: 50 }, { action: { type: 'obs.record', mode: 'start' } }],
+  };
+  const set = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot: '0-2', button: { tap } } });
+  assert.equal(set.ok, true);
+  const buttonId = (set.ok && (set.data as { buttonId: string }).buttonId) || '';
+  c.ws.send(JSON.stringify({ t: 'press', pageId, buttonId, which: 'tap' }));
+  await waitFor(() => app.bridge.state.programScene === 'Just Chatting', 3000, 'scene switched');
+  await waitFor(() => app.bridge.state.record.state === 'started', 3000, 'recording started');
+  c.ws.close();
+});

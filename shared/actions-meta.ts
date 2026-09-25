@@ -30,6 +30,7 @@ export const CATEGORIES = [
   'Media',
   'System',
   'Integrations',
+  'Macros',
   'Navigation',
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -51,6 +52,7 @@ export type FieldKind =
   | 'headers'
   | 'checkbox'
   | 'mediaPlayer'
+  | 'macroSteps'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -575,6 +577,24 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'http.request', method: 'POST', url: '' }),
     autoLabel: (a) => urlHost(a.url) || 'Webhook',
   },
+  macro: {
+    type: 'macro',
+    label: 'Macro',
+    description: 'Run several actions in a row, with pauses if you like (e.g. switch scene, unmute the mic, start recording).',
+    category: 'Macros',
+    icon: mdi('playlist-play'),
+    fields: [
+      { key: 'steps', label: 'Steps', kind: 'macroSteps' },
+      {
+        key: 'stopOnError',
+        label: 'Stop when a step fails',
+        kind: 'checkbox',
+        hint: 'Otherwise the remaining steps still run.',
+      },
+    ],
+    create: () => ({ type: 'macro', steps: [], stopOnError: true }),
+    autoLabel: () => 'Macro',
+  },
   'deck.page': {
     type: 'deck.page',
     label: 'Open Page / Folder',
@@ -638,15 +658,22 @@ export function visibleFields(action: Action): FieldDef[] {
 /** Names of required fields that are still empty (the editor blocks saving until they're set). */
 export function missingFields(action: Action): string[] {
   const values = action as unknown as Record<string, unknown>;
-  return visibleFields(action)
+  const missing = visibleFields(action)
     .filter((f) => !f.optional)
     .filter((f) => {
       const v = values[f.key];
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;
       if (f.kind === 'number') return typeof v !== 'number' || Number.isNaN(v);
       if (f.kind === 'checkbox') return false;
+      if (f.kind === 'macroSteps') return !Array.isArray(v) || v.length === 0;
       return typeof v !== 'string' || v === '';
     })
     .map((f) => f.label);
+  if (action.type === 'macro') {
+    action.steps.forEach((step, i) => {
+      if ('action' in step) missing.push(...missingFields(step.action).map((name) => `step ${i + 1} ${name.toLowerCase()}`));
+    });
+  }
+  return missing;
 }
 

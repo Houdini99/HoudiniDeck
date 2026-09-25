@@ -11,6 +11,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 - **Beyond OBS:**
   - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
   - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
+- **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
@@ -161,7 +162,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 

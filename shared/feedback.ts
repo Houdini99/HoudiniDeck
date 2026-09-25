@@ -138,6 +138,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
       };
     case 'obs.hotkey':
     case 'http.request':
+    case 'macro':
       return { active: false };
     case 'system.volume': {
       const device = ext.audio.available ? ext.audio[action.target] : null;

@@ -3,9 +3,10 @@
   import { prettyHotkey } from '$shared/format.ts';
   import { resolveSceneOrGroupName, resolveSourceName } from '$shared/obs-resolve.ts';
   import { MEDIA_INPUT_KINDS } from '$shared/obs-types.ts';
-  import type { Action, ObsRef } from '$shared/schema.ts';
+  import type { Action, MacroStep, ObsRef } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
   import HeadersField from './HeadersField.svelte';
+  import MacroSteps from './MacroSteps.svelte';
 
   // Fields are generated from the action's metadata; OBS pickers read the live mirror.
   let { action = $bindable() }: { action: Action } = $props();
@@ -139,6 +140,11 @@
       {@render title(field)}
       <HeadersField value={values[field.key] as Record<string, string> | undefined} onchange={(v) => setRaw(field, v)} />
       {#if field.hint}<small class="hint">{field.hint}</small>{/if}
+    </div>
+  {:else if field.kind === 'macroSteps'}
+    <div class="field">
+      {@render title(field)}
+      <MacroSteps bind:steps={() => values[field.key] as MacroStep[], (v) => setRaw(field, v)} />
     </div>
   {:else if field.kind === 'checkbox'}
     <label class="toggle">

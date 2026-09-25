@@ -78,9 +78,12 @@ For each action type:
   - **Feedback:** `wpctl get-volume @DEFAULT_AUDIO_SINK@` (and `…SOURCE@`) every 2 s, only while a browser is connected and the deck has a System Volume button for that device, plus right after each button press. Its output looks like `Volume: 0.45 [MUTED]`. Only changes are broadcast.
   - **Fader tile:** any action whose behavior is `fader` now gets the fader tile. The tile shows the percentage and has no level meter.
   - Checked against a fake wpctl and in unit tests. **Still to check on the PC** with the real wpctl (WirePlumber 0.5): the output format, and that `--limit` is accepted.
-- [ ] **`macro`:** `{ steps: Array<{ action } | { delayMs }>, stopOnError }`.
-  - Runs server-side through the dispatcher.
-  - **No nested macros and no `deck.*` steps.** Allow up to 20 steps; the editor needs a step list UI.
+- [x] **`macro`:** `{ steps: Array<{ action } | { delayMs }>, stopOnError }`, in `server/actions/macro.ts`.
+  - Steps run server-side through the same executor registry, as presses.
+  - **No nested macros and no `deck.*` steps:** the schema splits `StepActionSchema` (everything else) from `ActionSchema`. Steps that need holding or dragging (push-to-talk, faders) are refused too. Up to 20 steps, pauses up to 60 s.
+  - `stopOnError` (default on) stops at the first failed step and names it in the toast. Otherwise the rest still run, and the failures are listed at the end.
+  - A second tap while the macro is still running is refused.
+  - Editor: `web/src/editor/MacroSteps.svelte`, a step list with a form per step, reordering and pauses.
   - Example: switch scene → unmute mic → start recording.
 - [ ] **`system.command`** (gated):
   - Parameters: `{ command, detached?, timeoutMs? }`, run with `sh -c`.
