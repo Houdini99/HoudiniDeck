@@ -20,7 +20,7 @@ export const COLORS = {
 
 export type Behavior = 'press' | 'hold' | 'fader' | 'nav';
 
-export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Navigation'] as const;
+export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Integrations', 'Navigation'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type FieldKind =
@@ -35,6 +35,9 @@ export type FieldKind =
   | 'select'
   | 'number'
   | 'text'
+  | 'url'
+  | 'multiline'
+  | 'headers'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -52,7 +55,7 @@ export const REF_KINDS: ReadonlySet<FieldKind> = new Set([
   'anySource',
 ]);
 
-export interface FieldDef {
+export interface FieldDef<T extends ActionType = ActionType> {
   key: string;
   label: string;
   kind: FieldKind;
@@ -60,9 +63,12 @@ export interface FieldDef {
   optional?: boolean;
   /** Key of the field this one's choices depend on (e.g. a source list depends on the scene). */
   dependsOn?: string;
+  /** Hide the field (and don't require it) unless this returns true, e.g. no body for GET requests. */
+  show?: (a: ActionOf<T>) => boolean;
   min?: number;
   max?: number;
   step?: number;
+  placeholder?: string;
   hint?: string;
 }
 
@@ -83,7 +89,7 @@ export interface ActionMeta<T extends ActionType = ActionType> {
   activeBg?: Spec<T, string | undefined>;
   /** Defaults to 'press'. */
   behavior?: Spec<T, Behavior>;
-  fields: FieldDef[];
+  fields: FieldDef<T>[];
   create: () => ActionOf<T>;
   autoLabel: (a: ActionOf<T>, ctx: LabelCtx) => string;
   confirmByDefault?: boolean;
@@ -120,6 +126,14 @@ const MEDIA_LABELS: Record<ActionOf<'obs.media'>['action'], string> = {
 
 const inputName = (ref: { name: string; uuid?: string }, obs?: ObsState) =>
   (obs && resolveInput(obs, ref)?.name) || ref.name;
+
+function urlHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
 
 type MetaTable = { [T in ActionType]: ActionMeta<T> };
 
@@ -409,6 +423,50 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'obs.profile', name: '' }),
     autoLabel: (a) => a.name || 'Profile',
   },
+  'http.request': {
+    type: 'http.request',
+    label: 'Webhook',
+    description: 'Send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.',
+    category: 'Integrations',
+    icon: mdi('webhook'),
+    fields: [
+      {
+        key: 'method',
+        label: 'Method',
+        kind: 'select',
+        options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ value: m, label: m })),
+      },
+      { key: 'url', label: 'URL', kind: 'url', placeholder: 'http://homeassistant.local:8123/api/webhook/…' },
+      {
+        key: 'body',
+        label: 'Body',
+        kind: 'multiline',
+        optional: true,
+        show: (a) => a.method !== 'GET',
+        placeholder: '{"entity_id": "light.desk"}',
+        hint: 'Valid JSON is sent as application/json unless you set a Content-Type header.',
+      },
+      {
+        key: 'headers',
+        label: 'Headers',
+        kind: 'headers',
+        optional: true,
+        hint: 'Saved in the deck, so every paired device can read them (and so can backups).',
+      },
+      {
+        key: 'timeoutMs',
+        label: 'Timeout (ms)',
+        kind: 'number',
+        optional: true,
+        min: 500,
+        max: 60000,
+        step: 500,
+        placeholder: '10000',
+      },
+    ],
+    create: () => ({ type: 'http.request', method: 'POST', url: '' }),
+    autoLabel: (a) => urlHost(a.url) || 'Webhook',
+  },
   'deck.page': {
     type: 'deck.page',
     label: 'Open Page / Folder',
@@ -464,11 +522,16 @@ export function actionActiveBg(action: Action): string | undefined {
   return pick(metaFor(action).activeBg, action);
 }
 
+/** Fields the editor shows for this action right now (some depend on other fields). */
+export function visibleFields(action: Action): FieldDef[] {
+  return metaFor(action).fields.filter((f) => !f.show || f.show(action));
+}
+
 /** Names of required fields that are still empty (the editor blocks saving until they're set). */
 export function missingFields(action: Action): string[] {
   const values = action as unknown as Record<string, unknown>;
-  return metaFor(action)
-    .fields.filter((f) => !f.optional)
+  return visibleFields(action)
+    .filter((f) => !f.optional)
     .filter((f) => {
       const v = values[f.key];
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;

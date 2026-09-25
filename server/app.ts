@@ -43,10 +43,11 @@ export async function startApp(env: Env): Promise<App> {
   const obsConfig = settingsStore.obsConfig(env);
 
   const bridge = new ObsBridge({ url: obsConfig.url, password: obsConfig.password, log: createLogger('obs') });
+  const actionLog = createLogger('actions');
   const dispatcher = new Dispatcher({
-    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS') }),
+    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS'), log: actionLog }),
     getDeck: () => deckStore.deck,
-    log: createLogger('actions'),
+    log: actionLog,
   });
   const version = packageVersion();
   const hub = new Hub({

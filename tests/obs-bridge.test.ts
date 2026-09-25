@@ -71,7 +71,7 @@ test('actions go to OBS and the resulting events update the mirror', async (t) =
       },
     ],
   };
-  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: '/nonexistent' }), getDeck: () => deck, log: silentLogger });
+  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: '/nonexistent', log: silentLogger }), getDeck: () => deck, log: silentLogger });
 
   await dispatcher.press('p', 'scene', 'tap');
   await waitFor(() => bridge.state.programScene === 'BRB', 2000, 'program scene change');
@@ -179,7 +179,7 @@ test('every OBS action type reaches OBS with the right request', async (t) => {
       },
     ],
   };
-  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: tmp.dir }), getDeck: () => deck, log: silentLogger });
+  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: tmp.dir, log: silentLogger }), getDeck: () => deck, log: silentLogger });
   const press = (id: string) => dispatcher.press('p', id, 'tap');
   const s = () => bridge.state;
 

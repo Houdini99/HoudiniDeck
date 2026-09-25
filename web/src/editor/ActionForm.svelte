@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { REF_KINDS, actionMeta, type FieldDef } from '$shared/actions-meta.ts';
+  import { REF_KINDS, actionMeta, visibleFields, type FieldDef } from '$shared/actions-meta.ts';
   import { prettyHotkey } from '$shared/format.ts';
   import { resolveSceneOrGroupName, resolveSourceName } from '$shared/obs-resolve.ts';
   import { MEDIA_INPUT_KINDS } from '$shared/obs-types.ts';
   import type { Action, ObsRef } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
+  import HeadersField from './HeadersField.svelte';
 
   // Fields are generated from the action's metadata; OBS pickers read the live mirror.
   let { action = $bindable() }: { action: Action } = $props();
@@ -16,6 +17,7 @@
   }
 
   const meta = $derived(actionMeta(action.type));
+  const fields = $derived(visibleFields(action));
   const values = $derived(action as unknown as Record<string, unknown>);
   const online = $derived(store.obs?.connection === 'connected');
 
@@ -101,49 +103,94 @@
     }
   }
 
+  function setRaw(field: FieldDef, value: unknown): void {
+    (action as unknown as Record<string, unknown>)[field.key] = value;
+  }
+
   function placeholder(field: FieldDef): string {
+    if (field.placeholder) return field.placeholder;
     if (field.dependsOn && !currentValue(meta.fields.find((f) => f.key === field.dependsOn)!)) return 'Choose the one above first';
     return online ? 'Nothing to choose from' : 'OBS is offline: type the name';
   }
 </script>
 
-{#each meta.fields as field (field.key)}
+{#snippet title(field: FieldDef)}
+  <span>{field.label}{#if field.optional}{' '}<small>(optional)</small>{/if}</span>
+{/snippet}
+
+{#each fields as field (field.key)}
   {@const opts = options(field)}
   {@const value = currentValue(field)}
-  <label class="field">
-    <span>{field.label}{#if field.optional}<small> (optional)</small>{/if}</span>
-    {#if field.kind === 'number'}
-      <input
-        type="number"
-        min={field.min}
-        max={field.max}
-        step={field.step}
-        {value}
-        oninput={(e) => setValue(field, e.currentTarget.value, opts)}
-      />
-    {:else if field.kind === 'text' || (opts.length === 0 && field.kind !== 'select')}
-      <input
-        type="text"
-        {value}
-        placeholder={placeholder(field)}
-        disabled={online && !!field.dependsOn && opts.length === 0 && field.kind !== 'text'}
-        onchange={(e) => setValue(field, e.currentTarget.value.trim(), opts)}
-      />
-    {:else}
-      <select {value} onchange={(e) => setValue(field, e.currentTarget.value, opts)}>
-        {#if field.optional}
-          <option value="">(none)</option>
-        {:else if !value}
-          <option value="" disabled>Choose…</option>
-        {/if}
-        {#if value && !opts.some((o) => o.value === value)}
-          <option {value}>{value} (not found)</option>
-        {/if}
-        {#each opts as o (o.value)}
-          <option value={o.value}>{o.label}</option>
-        {/each}
-      </select>
-    {/if}
-    {#if field.hint}<small class="hint">{field.hint}</small>{/if}
-  </label>
+  {#if field.kind === 'headers'}
+    <div class="field">
+      {@render title(field)}
+      <HeadersField value={values[field.key] as Record<string, string> | undefined} onchange={(v) => setRaw(field, v)} />
+      {#if field.hint}<small class="hint">{field.hint}</small>{/if}
+    </div>
+  {:else}
+    <label class="field">
+      {@render title(field)}
+      {#if field.kind === 'number'}
+        <input
+          type="number"
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          placeholder={field.placeholder}
+          {value}
+          oninput={(e) => setValue(field, e.currentTarget.value, opts)}
+        />
+      {:else if field.kind === 'url'}
+        <input
+          type="url"
+          inputmode="url"
+          autocapitalize="off"
+          spellcheck="false"
+          {value}
+          placeholder={field.placeholder}
+          onchange={(e) => setValue(field, e.currentTarget.value.trim(), opts)}
+        />
+      {:else if field.kind === 'multiline'}
+        <textarea
+          rows="4"
+          autocapitalize="off"
+          spellcheck="false"
+          {value}
+          placeholder={field.placeholder}
+          onchange={(e) => setValue(field, e.currentTarget.value, opts)}
+        ></textarea>
+      {:else if field.kind === 'text' || (opts.length === 0 && field.kind !== 'select')}
+        <input
+          type="text"
+          {value}
+          placeholder={placeholder(field)}
+          disabled={online && !!field.dependsOn && opts.length === 0 && field.kind !== 'text'}
+          onchange={(e) => setValue(field, e.currentTarget.value.trim(), opts)}
+        />
+      {:else}
+        <select {value} onchange={(e) => setValue(field, e.currentTarget.value, opts)}>
+          {#if field.optional}
+            <option value="">(none)</option>
+          {:else if !value}
+            <option value="" disabled>Choose…</option>
+          {/if}
+          {#if value && !opts.some((o) => o.value === value)}
+            <option {value}>{value} (not found)</option>
+          {/if}
+          {#each opts as o (o.value)}
+            <option value={o.value}>{o.label}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if field.hint}<small class="hint">{field.hint}</small>{/if}
+    </label>
+  {/if}
 {/each}
+
+<style>
+  textarea {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    resize: vertical;
+  }
+</style>

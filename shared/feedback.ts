@@ -132,6 +132,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
         missing: obs.profiles.list.length > 0 && !obs.profiles.list.includes(action.name),
       };
     case 'obs.hotkey':
+    case 'http.request':
       return { active: false };
     case 'deck.page':
       return { active: false, missing: !deck.pages.some((p) => p.id === action.pageId) };

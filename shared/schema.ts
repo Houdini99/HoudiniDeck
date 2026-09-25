@@ -19,6 +19,13 @@ export const ObsRefSchema = z.object({
 
 const Toggle3 = z.enum(['toggle', 'start', 'stop']);
 
+// Header names are HTTP tokens; values must be one line of Latin-1 text (what fetch accepts).
+const HeaderName = z.string().regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$/, 'Header names are letters, digits and - (e.g. Authorization)');
+const HeaderValue = z
+  .string()
+  .max(4000)
+  .regex(/^[\t\x20-\x7e\x80-\xff]*$/, 'Header values must be one line of plain text');
+
 export const ActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('obs.scene'),
@@ -65,6 +72,17 @@ export const ActionSchema = z.discriminatedUnion('type', [
     type: z.literal('obs.media'),
     input: ObsRefSchema,
     action: z.enum(['playPause', 'play', 'pause', 'restart', 'stop', 'next', 'previous']),
+  }),
+  z.object({
+    type: z.literal('http.request'),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('POST'),
+    url: z.url({ protocol: /^https?$/, message: 'Use an http:// or https:// URL' }).max(2000),
+    headers: z
+      .record(HeaderName, HeaderValue)
+      .refine((h) => Object.keys(h).length <= 20, 'At most 20 headers')
+      .optional(),
+    body: z.string().max(20_000).optional(),
+    timeoutMs: z.number().int().min(500).max(60_000).optional(),
   }),
   // Navigation actions never reach the server's executors; the browser handles them.
   z.object({ type: z.literal('deck.page'), pageId: Id }),

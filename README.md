@@ -8,6 +8,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Mute, push-to-talk/push-to-mute, and volume faders with live meters.
   - Stream, record (pause, split, chapters), replay buffer and virtual camera.
   - Transitions, screenshots, scene collections and profiles, OBS hotkeys, and media sources.
+- **Beyond OBS:** webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
   - Drag-and-drop editing.
@@ -116,6 +117,9 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Other websites are refused:** WebSocket connections and uploads from a different origin are rejected.
 - **Secrets stay on the server:** the OBS password is never sent to browsers, and `settings.json` is readable only by you.
 - **Uploads:** only real images are accepted (checked by content), and they're served with `nosniff` and a sandboxing CSP.
+- **Webhooks:**
+  - A paired device can make the PC send HTTP requests to any `http://` or `https://` address, including services on your network.
+  - Headers (e.g. an API token) are saved in the deck, so every paired device and every backup file can read them.
 
 Don't forward the port to the internet. For access away from home, use your VPN (e.g. WireGuard).
 
@@ -152,7 +156,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, webhooks, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 

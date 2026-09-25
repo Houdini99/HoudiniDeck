@@ -40,7 +40,7 @@ Goal: buttons that do things other than OBS (commands, webhooks, media keys, sys
 For each action type:
 
 1. **Schema:** add to `ActionSchema` in `shared/schema.ts`. Prefix the type by area: `system.*`, `http.*`, `media.*`, `macro`, `discord.*`.
-2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`.
+2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`. A field with `show` only appears (and is only required) while `show(action)` is true.
 3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
 4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts`.
    - New state that isn't OBS (now playing, system volume, stats) needs its own slice.
@@ -60,9 +60,12 @@ For each action type:
 ### Work items (suggested order: least system setup first)
 
 - [x] **Executor registry refactor** (see "How new actions plug in", step 3). No behavior change, except that rapid fader moves are now coalesced per button instead of per OBS input. `tests/dispatch.test.ts` covers the dispatcher with fake executors.
-- [ ] **`http.request` webhook:** `{ method, url, headers?, body?, timeoutMs? }`.
-  - Implement with `fetch` and an AbortController.
-  - A non‑2xx response becomes a toast with the status.
+- [x] **`http.request` webhook:** `{ method, url, headers?, body?, timeoutMs? }`, in `server/actions/http.ts`.
+  - `fetch` with `AbortSignal.timeout` (10 s unless the button sets `timeoutMs`).
+  - A non‑2xx response becomes a toast with the status; network errors get a readable reason (refused, host not found, certificate not trusted, …).
+  - A body that is valid JSON goes out as `application/json` unless a Content-Type header is set. GET requests never send a body.
+  - `user:password@` in the URL becomes a Basic `Authorization` header (fetch refuses such URLs).
+  - The editor gained the `url`, `multiline` and `headers` field kinds.
   - Use cases: Home Assistant, Streamer.bot, Philips Hue.
 - [ ] **`media.player`:** `{ command: playPause|next|previous|stop, player? }` using `playerctl [-p player] play-pause`.
   - **Feedback:** `playerctl --follow metadata --format '{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}'`, kept running while any client is connected.

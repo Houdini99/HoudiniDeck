@@ -1,5 +1,7 @@
 // End-to-end: real server on a random port, talking to the mock OBS, driven over WebSocket/HTTP.
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { WebSocket } from 'ws';
 import { startApp, type App } from '../server/app.ts';
@@ -227,5 +229,29 @@ test('changing the OBS address without a password drops the saved one', async ()
   } finally {
     await second.close();
     await tmp.cleanup();
+  }
+});
+
+test('webhook buttons call their URL when pressed', async () => {
+  const hits: string[] = [];
+  const hook = createServer((req, res) => {
+    hits.push(`${req.method} ${req.url}`);
+    res.writeHead(204).end();
+  });
+  await new Promise<void>((resolve) => hook.listen(0, '127.0.0.1', resolve));
+  try {
+    const c = connect(`localhost:${app.port}`);
+    const init = await c.next('init');
+    const pageId = init.deck.pages[0].id;
+    const url = `http://127.0.0.1:${(hook.address() as AddressInfo).port}/api/webhook/deck`;
+    const set = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot: '0-1', button: { tap: { type: 'http.request', url } } } });
+    assert.equal(set.ok, true);
+    const buttonId = (set.ok && (set.data as { buttonId: string }).buttonId) || '';
+    c.ws.send(JSON.stringify({ t: 'press', pageId, buttonId, which: 'tap' }));
+    await waitFor(() => hits.length > 0, 3000, 'webhook call');
+    assert.deepEqual(hits, ['POST /api/webhook/deck'], 'POST is the default method');
+    c.ws.close();
+  } finally {
+    hook.close();
   }
 });
