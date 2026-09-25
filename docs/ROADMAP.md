@@ -1,10 +1,10 @@
 # Roadmap
 
-Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25; see the README for what exists. This file covers what is **not** done yet.
+Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work.
 
-## 0. Before anything new: finish verifying Phases 1–2
+## 0. Before anything new: verify on the real PC
 
-These need the user and weren't possible during the first build:
+These need the user's PC and weren't possible where the code was built (a cloud container without OBS, a desktop session or the helper programs):
 
 - [ ] **Test against the real OBS.**
   - The OBS WebSocket server was off (`~/.config/obs-studio/plugin_config/obs-websocket/config.json` → `server_enabled: false`).
@@ -18,6 +18,13 @@ These need the user and weren't possible during the first build:
 - [ ] **Firewall.** ufw is active. The user runs `sudo ufw allow from 192.168.1.0/24 to any port 3325 proto tcp`; then test from a phone at `http://my-pc.local:3325`.
 - [ ] **Autostart (optional).** Install `deploy/virtual-streamdeck.service` as a systemd user unit, only if the user asks. The README has the commands.
 - [ ] Fix anything the real‑OBS test turns up. Real obs-websocket 5.6 may differ from `server/dev/mock-obs.ts` in details: `inputKindCaps`, groups, error codes. Update the mock to match.
+- [ ] **Check the Phase 3 buttons against the real programs.** They were built against fakes and unit tests; each item below says what to look at:
+  - **Media keys** with Spotify and Firefox: the cover art, the PAUSED badge, and which player "whichever played last" controls.
+  - **System volume:** mute and fader with the real `wpctl` (WirePlumber 0.5), and that `--limit` is accepted.
+  - **Stats tiles:** the k10temp temperature, and GPU numbers from `nvidia-smi`.
+  - **Keyboard shortcuts:** after the user installs ydotool and enables its service (README → Requirements).
+  - **KDE shortcuts:** the list in the editor, and pressing e.g. KWin → Overview.
+  - **Run Command:** only if the user wants it. Start the deck with `STREAMDECK_ENABLE_COMMANDS=1`; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
 
 ## Phase 3: actions beyond OBS
 
