@@ -5,6 +5,7 @@ import os from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { Dispatcher } from './actions/dispatch.ts';
+import { createExecutors } from './actions/registry.ts';
 import { packageVersion, picturesDir, type Env } from './env.ts';
 import { createHttpServer } from './http.ts';
 import { Hub } from './hub.ts';
@@ -43,10 +44,9 @@ export async function startApp(env: Env): Promise<App> {
 
   const bridge = new ObsBridge({ url: obsConfig.url, password: obsConfig.password, log: createLogger('obs') });
   const dispatcher = new Dispatcher({
-    bridge,
+    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS') }),
     getDeck: () => deckStore.deck,
     log: createLogger('actions'),
-    screenshotDir: join(picturesDir(), 'OBS'),
   });
   const version = packageVersion();
   const hub = new Hub({

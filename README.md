@@ -149,7 +149,7 @@ deploy/   systemd user unit
 
 1. **Schema:** add it to `ActionSchema` in `shared/schema.ts`.
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts` (label, category, icon, form fields, behavior).
-3. **Executor:** handle it on the server. `server/actions/dispatch.ts` routes by the `type` prefix; OBS actions live in `server/obs/execute.ts`.
+3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`.
 
 The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, webhooks, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).

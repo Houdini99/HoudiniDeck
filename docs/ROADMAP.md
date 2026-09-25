@@ -41,7 +41,7 @@ For each action type:
 
 1. **Schema:** add to `ActionSchema` in `shared/schema.ts`. Prefix the type by area: `system.*`, `http.*`, `media.*`, `macro`, `discord.*`.
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`.
-3. **Executor:** today `server/actions/dispatch.ts` → `run()` only handles `obs.*`. Refactor it into a small registry, e.g. `Record<prefix, (action, phase) => Promise<void>>`, and put each integration in its own file under `server/actions/` (`system.ts`, `http.ts`, `media.ts`, …). Throw `ActionError` for messages the user should see.
+3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
 4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts`.
    - New state that isn't OBS (now playing, system volume, stats) needs its own slice.
    - Add e.g. `{ t: 'ext', media, system }` to `ServerMsg` in `shared/protocol.ts`. Keep it in a store like `ObsStateStore`, broadcast it debounced from `server/hub.ts`, and hold it in `web/src/lib/store.svelte.ts`.
@@ -59,7 +59,7 @@ For each action type:
 
 ### Work items (suggested order: least system setup first)
 
-- [ ] **Executor registry refactor** (see "How new actions plug in", step 3). No behavior change; keeps tests green.
+- [x] **Executor registry refactor** (see "How new actions plug in", step 3). No behavior change, except that rapid fader moves are now coalesced per button instead of per OBS input. `tests/dispatch.test.ts` covers the dispatcher with fake executors.
 - [ ] **`http.request` webhook:** `{ method, url, headers?, body?, timeoutMs? }`.
   - Implement with `fetch` and an AbortController.
   - A non‑2xx response becomes a toast with the status.

@@ -7,13 +7,13 @@ import { z } from 'zod';
 import { CLOSE, PROTOCOL_VERSION, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
 import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
+import { ActionError } from './actions/executor.ts';
 import { isTrustedLocal, keyMatches, originAllowed } from './auth.ts';
 import { OpError, applyOp } from './deck/ops.ts';
 import type { Env } from './env.ts';
 import { errorMessage, type Logger } from './log.ts';
 import { pairingUrl } from './network.ts';
 import type { ObsBridge } from './obs/bridge.ts';
-import { ActionError } from './obs/execute.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
 
