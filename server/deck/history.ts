@@ -21,6 +21,8 @@ export function opLabel(op: DeckOp): string {
       return 'deleted page';
     case 'page.move':
       return 'page move';
+    case 'page.duplicate':
+      return 'page copy';
     case 'button.set':
       return op.button ? 'button change' : 'deleted button';
     case 'button.move':

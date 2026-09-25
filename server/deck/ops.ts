@@ -122,6 +122,23 @@ function change(current: Deck, op: DeckOp, ctx: OpContext): OpResult {
       deck.pages.splice(Math.min(op.toIndex, deck.pages.length), 0, page);
       return { deck };
     }
+    case 'page.duplicate': {
+      checkPageLimit(deck);
+      const source = mustPage(deck, op.pageId);
+      const copy: Page = { ...structuredClone(source), id: ctx.newId(), name: uniquePageName(deck, `${source.name} copy`) };
+      const ids = new Map(Object.values(copy.buttons).map((b) => [b.id, ctx.newId()]));
+      for (const button of Object.values(copy.buttons)) {
+        button.id = ids.get(button.id)!;
+        // Counters and timers that point at a button on this page now point at its copy.
+        for (const action of [button.tap, button.longPress]) {
+          for (const inner of action ? withNested(action) : []) {
+            if ((inner.type === 'counter' || inner.type === 'timer') && inner.target && ids.has(inner.target)) inner.target = ids.get(inner.target);
+          }
+        }
+      }
+      deck.pages.splice(deck.pages.indexOf(source) + 1, 0, copy);
+      return { deck, data: { pageId: copy.id } };
+    }
     case 'button.set': {
       const page = mustPage(deck, op.pageId);
       mustSlot(page, op.slot);

@@ -349,6 +349,8 @@ export const DeckOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('page.update'), pageId: Id, name: PageName.optional(), rows: Rows.optional(), cols: Cols.optional() }),
   z.object({ op: z.literal('page.delete'), pageId: Id }),
   z.object({ op: z.literal('page.move'), pageId: Id, toIndex: z.number().int().min(0) }),
+  /** A copy of the page and its buttons, right after it. */
+  z.object({ op: z.literal('page.duplicate'), pageId: Id }),
   z.object({ op: z.literal('button.set'), pageId: Id, slot: Slot, button: NewButtonSchema.nullable() }),
   z.object({
     op: z.literal('button.move'),

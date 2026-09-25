@@ -287,3 +287,23 @@ test('label position and size reach the look; anything else is refused', () => {
   assert.deepEqual([v.labelPos, v.labelSize], ['top', 'large']);
   assert.equal(DeckSchema.safeParse(deckWith({ '0-0': { id: 'x', labelPos: 'left' as never } })).success, false);
 });
+
+test('a page can be duplicated; counters pointing inside it point at the copies', () => {
+  const deck = deckWith({
+    '0-0': { id: 'deaths', tap: { type: 'counter', mode: 'add' } },
+    '0-1': { id: 'minus', tap: { type: 'macro', steps: [{ action: { type: 'counter', mode: 'add', step: -1, target: 'deaths' } }], stopOnError: true } },
+    '0-2': { id: 'far', tap: { type: 'timer', mode: 'restart', target: 'elsewhere' } },
+  }, [{ id: 'q', name: 'Other', rows: 1, cols: 1, buttons: { '0-0': { id: 'elsewhere', tap: { type: 'timer', mode: 'toggle' } } } }]);
+  const { deck: next, data } = applyOp(deck, { op: 'page.duplicate', pageId: 'p' }, { obs: emptyObsState(), newId: seqId });
+  assert.ok(DeckSchema.safeParse(next).success);
+  const copy = next.pages[1];
+  assert.equal(copy.id, (data as { pageId: string }).pageId);
+  assert.equal(copy.name, 'Main copy');
+  assert.equal(next.pages[2].id, 'q', 'right after the original');
+  const newDeaths = copy.buttons['0-0'].id;
+  assert.notEqual(newDeaths, 'deaths');
+  const step = (copy.buttons['0-1'].tap as { steps: { action: { target?: string } }[] }).steps[0].action;
+  assert.equal(step.target, newDeaths, 'the macro step follows the copied counter');
+  assert.equal((copy.buttons['0-2'].tap as { target?: string }).target, 'elsewhere', 'buttons on other pages stay the target');
+  assert.equal((deck.pages[0].buttons['0-1'].tap as { steps: { action: { target?: string } }[] }).steps[0].action.target, 'deaths', 'the original is untouched');
+});
