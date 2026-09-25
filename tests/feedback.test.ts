@@ -91,7 +91,7 @@ test('the editor can preview the normal and active look of a scene button', () =
 });
 
 function withPlayers(players: Record<string, PlayerInfo | null>, available = true): ExtState {
-  return { media: { available, players } };
+  return { media: { available, players }, audio: { available: true } };
 }
 
 const song: PlayerInfo = { instance: 'spotify', status: 'Playing', artist: 'Daft Punk', title: 'One More Time', art: 'https://i.scdn.co/image/x' };

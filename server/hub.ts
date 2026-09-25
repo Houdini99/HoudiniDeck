@@ -17,6 +17,7 @@ import { pairingUrl } from './network.ts';
 import type { ObsBridge } from './obs/bridge.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
+import type { AudioWatcher } from './system/audio.ts';
 import type { MediaWatcher } from './system/media.ts';
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -41,6 +42,7 @@ export interface HubDeps {
   bridge: ObsBridge;
   ext: ExtStore;
   media: MediaWatcher;
+  audio: AudioWatcher;
   dispatcher: Dispatcher;
   buildId: string;
   info: () => ServerInfo;
@@ -318,12 +320,13 @@ export class Hub {
     }
   }
 
-  /** Background work (OBS polling, meters, media players) only runs while someone is connected. */
+  /** Background work (OBS polling, meters, media players, volume) only runs while someone is connected. */
   private updateInterest(): void {
     const authed = [...this.clients.values()].filter((c) => c.authed);
     this.deps.bridge.setClientCount(authed.length);
     this.deps.bridge.setMetersWanted(authed.some((c) => c.meters.size > 0));
     this.deps.media.setActive(authed.length > 0);
+    this.deps.audio.setActive(authed.length > 0);
   }
 
   private onClose(client: Client): void {

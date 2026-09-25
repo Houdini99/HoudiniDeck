@@ -10,6 +10,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Transitions, screenshots, scene collections and profiles, OBS hotkeys, and media sources.
 - **Beyond OBS:**
   - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
+  - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
@@ -25,7 +26,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 
 - Node.js 24.2 or newer. Node runs the TypeScript server directly, so there's no build step for the server.
 - OBS Studio 28 or newer, which has obs-websocket 5 built in.
-- Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`).
+- Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
 
 ## Quick start
 
@@ -160,7 +161,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
@@ -170,6 +171,7 @@ The editor, validation and multi-device sync pick it up automatically. What's pl
 - **"OBS rejected the password":** copy the password again from *Show Connect Info* in OBS into Settings.
 - **"Can't reach OBS":** OBS isn't running, or its WebSocket server is off (Tools → WebSocket Server Settings).
 - **Media keys are dimmed:** no media player is running, or `playerctl` isn't installed. Run `playerctl -l` in a terminal: it should list your players.
+- **System volume buttons are dimmed:** `wpctl get-volume @DEFAULT_AUDIO_SINK@` should print the volume. If the deck runs as a systemd service, it needs to run as your user (it does with the included user unit).
 - **The tablet's screen turns off:**
   - Keep-awake needs one tap after the page loads.
   - Over plain `http://`, browsers only allow a workaround, so also consider raising the tablet's auto-lock time.

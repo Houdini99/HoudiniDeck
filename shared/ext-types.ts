@@ -1,5 +1,5 @@
-// State from outside OBS (media players; later system volume and stats) that the server pushes
-// to every browser, next to the OBS mirror. Types and pure helpers only: the browser imports this.
+// State from outside OBS (media players, system volume; later stats) that the server pushes to
+// every browser, next to the OBS mirror. Types and pure helpers only: the browser imports this.
 
 export type PlayerStatus = 'Playing' | 'Paused' | 'Stopped';
 
@@ -23,12 +23,29 @@ export interface MediaState {
   players: Record<string, PlayerInfo | null>;
 }
 
+export type AudioTarget = 'output' | 'input';
+
+export interface AudioDevice {
+  /** 1 = 100% (as in the desktop's volume slider); above 1 is amplified. */
+  volume: number;
+  muted: boolean;
+}
+
+export interface AudioState {
+  /** false when wpctl isn't installed. */
+  available: boolean;
+  /** The default speakers and microphone. Missing until read; null when there is no such device. */
+  output?: AudioDevice | null;
+  input?: AudioDevice | null;
+}
+
 export interface ExtState {
   media: MediaState;
+  audio: AudioState;
 }
 
 export function emptyExtState(): ExtState {
-  return { media: { available: true, players: {} } };
+  return { media: { available: true, players: {} }, audio: { available: true } };
 }
 
 /** The player a media button refers to (its `player` field, or '' for whichever is active). */

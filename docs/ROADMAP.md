@@ -73,9 +73,11 @@ For each action type:
   - **Commands:** without a named player they go to `--player <instance>` of the followed player, so the button controls what it shows. Plain `playerctl play-pause` would pick the first player it lists.
   - **Now-playing tile** (`nowPlaying`, on by default for new buttons): the title as the label, and the art filling the button. `https://` art is used as is; `file://` art is served at `/api/media/art/<random token>` (only the current track's file, and only if it is an image). A PAUSED badge shows when paused.
   - Checked against a fake playerctl and in unit tests. **Still to check on the PC** with real players (Spotify, Firefox): that the art shows, and which player "whichever played last" picks.
-- [ ] **`system.volume`:** `{ target: output|input, mode: toggleMute|mute|unmute|step, db? }` using `wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle` and `wpctl set-volume … 5%+`.
-  - **Feedback:** poll `wpctl get-volume @DEFAULT_AUDIO_SINK@` (and `…SOURCE@`) every 2 s while clients are connected. Its output looks like `Volume: 0.45 [MUTED]`.
-  - Also usable as a fader tile.
+- [x] **`system.volume`:** `{ target: output|input, mode: toggleMute|mute|unmute|step|fader, step? }`, in `server/actions/system.ts` and `server/system/audio.ts`.
+  - **Commands:** `wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle|1|0`. Steps are in percent (`5%+`, `10%-`); turning up uses `--limit=1.0` so it stops at 100%, like the desktop's volume keys. The fader sets the volume directly (0–1).
+  - **Feedback:** `wpctl get-volume @DEFAULT_AUDIO_SINK@` (and `…SOURCE@`) every 2 s, only while a browser is connected and the deck has a System Volume button for that device, plus right after each button press. Its output looks like `Volume: 0.45 [MUTED]`. Only changes are broadcast.
+  - **Fader tile:** any action whose behavior is `fader` now gets the fader tile. The tile shows the percentage and has no level meter.
+  - Checked against a fake wpctl and in unit tests. **Still to check on the PC** with the real wpctl (WirePlumber 0.5): the output format, and that `--limit` is accepted.
 - [ ] **`macro`:** `{ steps: Array<{ action } | { delayMs }>, stopOnError }`.
   - Runs server-side through the dispatcher.
   - **No nested macros and no `deck.*` steps.** Allow up to 20 steps; the editor needs a step list UI.

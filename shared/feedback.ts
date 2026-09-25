@@ -2,7 +2,7 @@
 import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon } from './actions-meta.ts';
 import { followedPlayer, type ExtState } from './ext-types.ts';
 import { mulToPos } from './fader.ts';
-import { formatDuration } from './format.ts';
+import { formatDb, formatDuration } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from './obs-resolve.ts';
 import type { ObsOutput, ObsState } from './obs-types.ts';
 import type { Action, Button, Deck, IconRef } from './schema.ts';
@@ -27,7 +27,8 @@ export interface ActionStatus {
   offline?: boolean;
   missing?: boolean;
   disabled?: boolean;
-  fader?: { pos: number; muted: boolean; db?: number; input: string };
+  /** Fader tiles: position 0..1, the value to show, and the OBS input whose level meter to show. */
+  fader?: { pos: number; muted: boolean; text: string; input?: string; mic?: boolean };
   /** A picture that fills the button (a song's cover art), shown instead of the icon. */
   image?: string;
 }
@@ -96,7 +97,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
       const muted = !!input.muted;
       return {
         active: muted,
-        fader: { pos: mulToPos(input.volumeMul ?? 0), muted, db: input.volumeDb, input: input.name },
+        fader: { pos: mulToPos(input.volumeMul ?? 0), muted, text: formatDb(input.volumeDb), input: input.name },
       };
     }
     case 'obs.volumeStep':
@@ -138,6 +139,18 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'obs.hotkey':
     case 'http.request':
       return { active: false };
+    case 'system.volume': {
+      const device = ext.audio.available ? ext.audio[action.target] : null;
+      if (device === null) return { active: false, disabled: true };
+      if (action.mode === 'step') return { active: false };
+      if (!device) return { active: false }; // not read yet
+      const status: ActionStatus = { active: device.muted };
+      if (action.mode === 'fader') {
+        const text = `${Math.round(device.volume * 100)}%`;
+        status.fader = { pos: Math.min(1, device.volume), muted: device.muted, text, mic: action.target === 'input' };
+      }
+      return status;
+    }
     case 'media.player': {
       const player = ext.media.available ? followedPlayer(ext, action.player) : undefined;
       if (!player) return { active: false, disabled: true };

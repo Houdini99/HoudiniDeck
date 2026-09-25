@@ -21,7 +21,17 @@ export const COLORS = {
 
 export type Behavior = 'press' | 'hold' | 'fader' | 'nav';
 
-export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Media', 'Integrations', 'Navigation'] as const;
+export const CATEGORIES = [
+  'Scenes & Sources',
+  'Audio',
+  'Outputs',
+  'Studio Mode',
+  'More OBS',
+  'Media',
+  'System',
+  'Integrations',
+  'Navigation',
+] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type FieldKind =
@@ -139,6 +149,14 @@ const PLAYER_COMMANDS: Record<ActionOf<'media.player'>['command'], { label: stri
   previous: { label: 'Previous Track', icon: 'skip-previous' },
   stop: { label: 'Stop', icon: 'stop' },
 };
+
+const VOLUME_TARGETS = { output: 'Speakers', input: 'Mic' } as const;
+
+function volumeIcon(a: ActionOf<'system.volume'>, muted: boolean): IconRef {
+  if (a.mode === 'step') return mdi((a.step ?? 5) >= 0 ? 'volume-plus' : 'volume-minus');
+  if (a.target === 'input') return mdi(muted ? 'microphone-off' : 'microphone');
+  return mdi(muted ? 'volume-off' : 'volume-high');
+}
 
 function urlHost(url: string): string {
   try {
@@ -462,6 +480,56 @@ export const ACTION_META: MetaTable = {
     ],
     create: () => ({ type: 'media.player', command: 'playPause', nowPlaying: true }),
     autoLabel: (a, { ext }) => (a.nowPlaying && ext && followedPlayer(ext, a.player)?.title) || PLAYER_COMMANDS[a.command].label,
+  },
+  'system.volume': {
+    type: 'system.volume',
+    label: 'System Volume',
+    description: 'Mute or change the PC’s speakers or microphone (its default devices), or use a fader.',
+    category: 'System',
+    icon: (a) => volumeIcon(a, false),
+    activeIcon: (a) => volumeIcon(a, true),
+    activeBg: (a) => (a.mode === 'step' ? undefined : COLORS.red),
+    behavior: (a) => (a.mode === 'fader' ? 'fader' : 'press'),
+    fields: [
+      {
+        key: 'target',
+        label: 'Device',
+        kind: 'select',
+        options: [
+          { value: 'output', label: 'Speakers / headphones (default output)' },
+          { value: 'input', label: 'Microphone (default input)' },
+        ],
+      },
+      {
+        key: 'mode',
+        label: 'Mode',
+        kind: 'select',
+        options: [
+          { value: 'toggleMute', label: 'Toggle mute' },
+          { value: 'mute', label: 'Mute' },
+          { value: 'unmute', label: 'Unmute' },
+          { value: 'step', label: 'Volume up or down' },
+          { value: 'fader', label: 'Fader (drag; tap to mute)' },
+        ],
+      },
+      {
+        key: 'step',
+        label: 'Step (%)',
+        kind: 'number',
+        min: -50,
+        max: 50,
+        step: 1,
+        show: (a) => a.mode === 'step',
+        hint: 'Negative numbers turn it down.',
+      },
+    ],
+    create: () => ({ type: 'system.volume', target: 'output', mode: 'toggleMute' }),
+    autoLabel: (a) => {
+      const name = VOLUME_TARGETS[a.target];
+      if (a.mode !== 'step') return name;
+      const step = a.step ?? 5;
+      return `${name} ${step >= 0 ? '+' : ''}${step}%`;
+    },
   },
   'http.request': {
     type: 'http.request',

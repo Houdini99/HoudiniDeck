@@ -15,6 +15,7 @@ import { reachableUrls } from './network.ts';
 import { ObsBridge } from './obs/bridge.ts';
 import { DeckStore } from './store/deck-store.ts';
 import { SettingsStore } from './store/settings-store.ts';
+import { AudioWatcher } from './system/audio.ts';
 import { MediaWatcher } from './system/media.ts';
 import { runProcess, spawnLines } from './system/process.ts';
 
@@ -24,6 +25,7 @@ export interface App {
   bridge: ObsBridge;
   ext: ExtStore;
   media: MediaWatcher;
+  audio: AudioWatcher;
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   /** Port actually bound (useful when env.port is 0). */
@@ -50,11 +52,14 @@ export async function startApp(env: Env): Promise<App> {
   const bridge = new ObsBridge({ url: obsConfig.url, password: obsConfig.password, log: createLogger('obs') });
   const ext = new ExtStore();
   const media = new MediaWatcher({ store: ext, spawn: spawnLines, run: runProcess, log: createLogger('media') });
-  media.setDeck(deckStore.deck);
-  deckStore.on('change', (deck) => media.setDeck(deck));
+  const audio = new AudioWatcher({ store: ext, run: runProcess, log: createLogger('audio') });
+  for (const watcher of [media, audio]) {
+    watcher.setDeck(deckStore.deck);
+    deckStore.on('change', (deck) => watcher.setDeck(deck));
+  }
   const actionLog = createLogger('actions');
   const dispatcher = new Dispatcher({
-    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS'), log: actionLog, run: runProcess, media }),
+    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS'), log: actionLog, run: runProcess, media, audio }),
     getDeck: () => deckStore.deck,
     log: actionLog,
   });
@@ -66,6 +71,7 @@ export async function startApp(env: Env): Promise<App> {
     bridge,
     ext,
     media,
+    audio,
     dispatcher,
     buildId: await readBuildId(env.webDist),
     info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort) }),
@@ -83,12 +89,14 @@ export async function startApp(env: Env): Promise<App> {
     bridge,
     ext,
     media,
+    audio,
     deckStore,
     settingsStore,
     port,
     async close() {
       hub.close();
       media.stop();
+      audio.stop();
       await bridge.stop();
       await http.close();
     },

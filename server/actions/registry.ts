@@ -2,12 +2,14 @@
 // folder and one line here.
 import type { Logger } from '../log.ts';
 import type { ObsBridge } from '../obs/bridge.ts';
+import type { AudioWatcher } from '../system/audio.ts';
 import type { MediaWatcher } from '../system/media.ts';
 import type { Runner } from '../system/process.ts';
 import type { ExecutorRegistry } from './executor.ts';
 import { httpExecutor } from './http.ts';
 import { mediaExecutor } from './media.ts';
 import { obsExecutor } from './obs.ts';
+import { systemExecutor } from './system.ts';
 
 export interface ExecutorDeps {
   bridge: ObsBridge;
@@ -18,6 +20,8 @@ export interface ExecutorDeps {
   run: Runner;
   /** Knows which media player the buttons show. */
   media: Pick<MediaWatcher, 'currentInstance'>;
+  /** Re-reads the system volume after a change. */
+  audio: Pick<AudioWatcher, 'refresh'>;
 }
 
 export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
@@ -25,6 +29,7 @@ export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
     obs: obsExecutor(deps.bridge, deps.screenshotDir),
     http: httpExecutor(deps.log),
     media: mediaExecutor(deps.run, deps.media),
+    system: systemExecutor({ run: deps.run, audio: deps.audio }),
     // Navigation happens in the browser, which never sends these; a stale client's press is a no-op.
     deck: async () => {},
   };

@@ -96,6 +96,13 @@ export const ActionSchema = z.discriminatedUnion('type', [
     /** Show the song's title and cover art on the button. */
     nowPlaying: z.boolean().optional(),
   }),
+  z.object({
+    type: z.literal('system.volume'),
+    target: z.enum(['output', 'input']).default('output'),
+    mode: z.enum(['toggleMute', 'mute', 'unmute', 'step', 'fader']).default('toggleMute'),
+    /** Percentage points per press in step mode (negative lowers the volume). */
+    step: z.number().int().min(-50).max(50).optional(),
+  }),
   // Navigation actions never reach the server's executors; the browser handles them.
   z.object({ type: z.literal('deck.page'), pageId: Id }),
   z.object({ type: z.literal('deck.back') }),
