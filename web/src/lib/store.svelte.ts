@@ -103,7 +103,8 @@ class Store {
   private buildId: string | null = null;
   private readonly meterInterest = new Interest<string>((inputs) => this.socket.send({ t: 'meters', inputs }));
   private readonly statInterest = new Interest<StatMetric>((metrics) => this.socket.send({ t: 'stats', metrics }));
-  private readonly thumbInterest = new Interest<string>((scenes) => this.socket.send({ t: 'thumbs', scenes }));
+  // The server takes up to 32 scenes; more live pictures than that on one screen would be unusual.
+  private readonly thumbInterest = new Interest<string>((scenes) => this.socket.send({ t: 'thumbs', scenes: scenes.slice(0, 32) }));
   private tick?: ReturnType<typeof setTimeout>;
 
   start(): void {

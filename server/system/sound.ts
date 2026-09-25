@@ -58,12 +58,17 @@ export function programSoundBackend(programs: SoundProgram[] = LINUX_SOUND_PROGR
         settled = true;
         resolve(playback);
       }, EARLY_EXIT_MS);
+      let failed = false;
       child.on('error', (err) => {
         clearTimeout(timer);
-        if (!settled) reject(err);
+        if (settled) return; // trouble while it plays (e.g. with kill()); 'close' still ends it
         settled = true;
+        failed = true; // it didn't start: the 'close' that follows means nothing
+        reject(err);
       });
-      child.on('exit', (code, signal) => {
+      // 'close' rather than 'exit': by then everything the player wrote to stderr has arrived.
+      child.on('close', (code, signal) => {
+        if (failed) return;
         if (settled) return onEnd();
         clearTimeout(timer);
         settled = true;
