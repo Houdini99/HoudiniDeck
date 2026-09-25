@@ -15,6 +15,8 @@ export interface Env {
   /** OBS overrides from the environment; undefined means "use settings.json". */
   obsUrl?: string;
   obsPassword?: string;
+  /** Allow buttons that run shell commands. Only the environment can turn this on, never the UI. */
+  commandsEnabled: boolean;
   production: boolean;
 }
 
@@ -33,6 +35,7 @@ export function readEnv(e: NodeJS.ProcessEnv = process.env): Env {
     webDist: join(ROOT_DIR, 'web', 'dist'),
     obsUrl: e.OBS_URL || undefined,
     obsPassword: e.OBS_PASSWORD,
+    commandsEnabled: e.STREAMDECK_ENABLE_COMMANDS === '1',
     production: e.NODE_ENV === 'production',
   };
 }

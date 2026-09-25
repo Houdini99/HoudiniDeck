@@ -1,7 +1,6 @@
 <script lang="ts">
   import { buttonVisual } from '$shared/feedback.ts';
   import { meterPos } from '$shared/fader.ts';
-  import { formatDb } from '$shared/format.ts';
   import type { Button, Page } from '$shared/schema.ts';
   import { capturePointer } from '../lib/pointer.ts';
   import { haptic, prefs } from '../lib/prefs.svelte.ts';
@@ -13,12 +12,12 @@
 
   let { page, button, interactive = true }: { page: Page; button: Button; interactive?: boolean } = $props();
 
-  const visual = $derived(buttonVisual(button, { obs: store.obs!, deck: store.deck!, now: store.now }));
+  const visual = $derived(buttonVisual(button, store.visualCtx));
   const fader = $derived(visual.fader);
   /** Position under the finger while dragging, so the fill follows instantly. */
   let dragPos = $state<number | null>(null);
   const pos = $derived(dragPos ?? fader?.pos ?? 0);
-  const level = $derived(fader ? meterPos(store.meters[fader.input] ?? 0) : 0);
+  const level = $derived(fader?.input ? meterPos(store.meters[fader.input] ?? 0) : 0);
   const showLabel = $derived(prefs.showLabels && !button.hideLabel);
 
   $effect(() => {
@@ -88,7 +87,7 @@
     active = false;
     if (dragging) {
       if (dragPos !== null) send(dragPos, true);
-      // Keep showing the dragged value until OBS echoes it back.
+      // Keep showing the dragged value until the new volume is reported back.
       releaseTimer = setTimeout(() => (dragPos = null), 700);
     } else {
       haptic();
@@ -121,10 +120,10 @@
   oncontextmenu={(e) => e.preventDefault()}
 >
   <div class="fill"></div>
-  <div class="meter"><div class="meter-level"></div></div>
+  {#if fader?.input}<div class="meter"><div class="meter-level"></div></div>{/if}
   <div class="content">
-    <UiIcon name={fader?.muted ? 'volume-off' : 'volume-high'} size={22} />
-    <span class="db">{fader?.muted ? 'Muted' : formatDb(fader?.db)}</span>
+    <UiIcon name={fader?.mic ? (fader.muted ? 'microphone-off' : 'microphone') : fader?.muted ? 'volume-off' : 'volume-high'} size={22} />
+    <span class="db">{fader?.muted ? 'Muted' : fader?.text}</span>
     {#if showLabel}<span class="name">{visual.label}</span>{/if}
   </div>
 </div>

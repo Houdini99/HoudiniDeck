@@ -4,22 +4,28 @@ import type { FastifyInstance } from 'fastify';
 import QRCode from 'qrcode';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
-import { CLOSE, PROTOCOL_VERSION, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
+import type { StatMetric } from '../shared/ext-types.ts';
+import { CLOSE, PROTOCOL_VERSION, type KdeComponent, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
 import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
+import { ActionError } from './actions/executor.ts';
 import { isTrustedLocal, keyMatches, originAllowed } from './auth.ts';
 import { OpError, applyOp } from './deck/ops.ts';
 import type { Env } from './env.ts';
+import type { ExtStore } from './ext-store.ts';
 import { errorMessage, type Logger } from './log.ts';
 import { pairingUrl } from './network.ts';
 import type { ObsBridge } from './obs/bridge.ts';
-import { ActionError } from './obs/execute.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
+import type { AudioWatcher } from './system/audio.ts';
+import type { MediaWatcher } from './system/media.ts';
+import type { StatsWatcher } from './system/stats.ts';
 
 const AUTH_TIMEOUT_MS = 10_000;
 const PING_INTERVAL_MS = 15_000;
 const OBS_BROADCAST_DEBOUNCE_MS = 30;
+const EXT_BROADCAST_DEBOUNCE_MS = 50;
 
 interface Client {
   id: string;
@@ -28,6 +34,8 @@ interface Client {
   trustedLocal: boolean;
   alive: boolean;
   meters: Set<string>;
+  /** Stats tiles on this client's screen. */
+  stats: Set<StatMetric>;
   authTimer?: NodeJS.Timeout;
 }
 
@@ -36,6 +44,12 @@ export interface HubDeps {
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   bridge: ObsBridge;
+  ext: ExtStore;
+  media: MediaWatcher;
+  audio: AudioWatcher;
+  stats: StatsWatcher;
+  /** Lists KDE's global shortcuts for the editor. */
+  kdeShortcuts: () => Promise<KdeComponent[]>;
   dispatcher: Dispatcher;
   buildId: string;
   info: () => ServerInfo;
@@ -49,6 +63,7 @@ export class Hub {
   private readonly clients = new Map<string, Client>();
   private opQueue: Promise<void> = Promise.resolve();
   private obsTimer?: NodeJS.Timeout;
+  private extTimer?: NodeJS.Timeout;
   private readonly pingTimer: NodeJS.Timeout;
   private readonly deps: HubDeps;
 
@@ -56,6 +71,7 @@ export class Hub {
     this.deps = deps;
     deps.bridge.store.on('change', () => this.scheduleObsBroadcast());
     deps.bridge.on('meters', (levels) => this.sendMeters(levels));
+    deps.ext.on('change', () => this.scheduleExtBroadcast());
     this.pingTimer = setInterval(() => this.pingAll(), PING_INTERVAL_MS);
   }
 
@@ -87,6 +103,7 @@ export class Hub {
       trustedLocal: isTrustedLocal(remoteAddress, host),
       alive: true,
       meters: new Set(),
+      stats: new Set(),
     };
     this.clients.set(client.id, client);
     ws.on('pong', () => (client.alive = true));
@@ -111,16 +128,17 @@ export class Hub {
   private authenticate(client: Client): void {
     client.authed = true;
     clearTimeout(client.authTimer);
-    const { deckStore, bridge, buildId, info } = this.deps;
+    const { deckStore, bridge, ext, buildId, info } = this.deps;
     this.send(client, {
       t: 'init',
       buildId,
       serverTime: Date.now(),
       deck: deckStore.deck,
       obs: bridge.state,
+      ext: ext.state,
       info: info(),
     });
-    this.updateBridgeInterest();
+    this.updateInterest();
   }
 
   private async onMessage(client: Client, text: string): Promise<void> {
@@ -171,7 +189,11 @@ export class Hub {
         return this.reply(client, msg.reqId, () => this.setObs(client, msg.url, msg.password));
       case 'meters':
         client.meters = new Set(msg.inputs);
-        this.updateBridgeInterest();
+        this.updateInterest();
+        return;
+      case 'stats':
+        client.stats = new Set(msg.metrics);
+        this.updateInterest();
         return;
     }
   }
@@ -199,7 +221,7 @@ export class Hub {
   private handleOp(client: Client, reqId: number, op: DeckOp): Promise<void> {
     const run = async () => {
       const { deckStore, bridge } = this.deps;
-      const result = applyOp(deckStore.deck, op, { obs: bridge.state, newId });
+      const result = applyOp(deckStore.deck, op, { obs: bridge.state, newId, commandsEnabled: this.deps.env.commandsEnabled });
       const valid = DeckSchema.safeParse(result.deck);
       if (!valid.success) throw new OpError(`That change would make the deck invalid:\n${z.prettifyError(valid.error)}`);
       await deckStore.replace(valid.data, { backupReason: result.backup });
@@ -211,14 +233,18 @@ export class Hub {
     return next;
   }
 
-  private async query(q: 'hotkeys'): Promise<unknown> {
-    const { bridge } = this.deps;
-    if (!bridge.connected) throw new ActionError('OBS is not connected');
+  private async query(q: 'hotkeys' | 'mediaPlayers' | 'kdeShortcuts'): Promise<unknown> {
+    const { bridge, media } = this.deps;
     switch (q) {
       case 'hotkeys': {
+        if (!bridge.connected) throw new ActionError('OBS is not connected');
         const { hotkeys } = await bridge.client.call('GetHotkeyList');
         return { hotkeys };
       }
+      case 'mediaPlayers':
+        return { players: await media.listPlayers() };
+      case 'kdeShortcuts':
+        return { components: await this.deps.kdeShortcuts() };
     }
   }
 
@@ -291,6 +317,14 @@ export class Hub {
     }, OBS_BROADCAST_DEBOUNCE_MS);
   }
 
+  private scheduleExtBroadcast(): void {
+    if (this.extTimer) return;
+    this.extTimer = setTimeout(() => {
+      this.extTimer = undefined;
+      this.broadcast({ t: 'ext', ext: this.deps.ext.state });
+    }, EXT_BROADCAST_DEBOUNCE_MS);
+  }
+
   private sendMeters(levels: Record<string, number>): void {
     for (const client of this.clients.values()) {
       if (!client.authed || client.meters.size === 0) continue;
@@ -300,17 +334,21 @@ export class Hub {
     }
   }
 
-  private updateBridgeInterest(): void {
+  /** Background work (OBS polling, meters, media players, volume, stats) only runs while someone looks. */
+  private updateInterest(): void {
     const authed = [...this.clients.values()].filter((c) => c.authed);
     this.deps.bridge.setClientCount(authed.length);
     this.deps.bridge.setMetersWanted(authed.some((c) => c.meters.size > 0));
+    this.deps.media.setActive(authed.length > 0);
+    this.deps.audio.setActive(authed.length > 0);
+    this.deps.stats.setWanted(authed.flatMap((c) => [...c.stats]));
   }
 
   private onClose(client: Client): void {
     clearTimeout(client.authTimer);
     this.clients.delete(client.id);
     void this.deps.dispatcher.releaseAll(client.id);
-    this.updateBridgeInterest();
+    this.updateInterest();
   }
 
   private pingAll(): void {
@@ -327,6 +365,7 @@ export class Hub {
   close(): void {
     clearInterval(this.pingTimer);
     clearTimeout(this.obsTimer);
+    clearTimeout(this.extTimer);
     for (const client of this.clients.values()) client.ws.close(CLOSE.serverRestart, 'server restarting');
   }
 }

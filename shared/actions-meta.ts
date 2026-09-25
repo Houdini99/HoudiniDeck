@@ -1,6 +1,8 @@
 // Everything the editor and the button renderer need to know about each action type.
 // Adding an action type = schema entry (schema.ts) + meta entry (here) + executor (server).
+import { followedPlayer, type ExtState, type StatMetric } from './ext-types.ts';
 import { prettyHotkey } from './format.ts';
+import { shortcutLabel } from './keys.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
 import type { ObsState } from './obs-types.ts';
 import type { Action, ActionOf, ActionType, Deck, IconRef } from './schema.ts';
@@ -18,9 +20,21 @@ export const COLORS = {
   slate: '#3b4256',
 } as const;
 
-export type Behavior = 'press' | 'hold' | 'fader' | 'nav';
+/** display: shows something (e.g. CPU load); tapping does nothing. */
+export type Behavior = 'press' | 'hold' | 'fader' | 'nav' | 'display';
 
-export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Navigation'] as const;
+export const CATEGORIES = [
+  'Scenes & Sources',
+  'Audio',
+  'Outputs',
+  'Studio Mode',
+  'More OBS',
+  'Media',
+  'System',
+  'Integrations',
+  'Macros',
+  'Navigation',
+] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type FieldKind =
@@ -35,6 +49,15 @@ export type FieldKind =
   | 'select'
   | 'number'
   | 'text'
+  | 'url'
+  | 'multiline'
+  | 'headers'
+  | 'checkbox'
+  | 'mediaPlayer'
+  | 'macroSteps'
+  | 'keys'
+  | 'kdeComponent'
+  | 'kdeShortcut'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -52,7 +75,7 @@ export const REF_KINDS: ReadonlySet<FieldKind> = new Set([
   'anySource',
 ]);
 
-export interface FieldDef {
+export interface FieldDef<T extends ActionType = ActionType> {
   key: string;
   label: string;
   kind: FieldKind;
@@ -60,15 +83,21 @@ export interface FieldDef {
   optional?: boolean;
   /** Key of the field this one's choices depend on (e.g. a source list depends on the scene). */
   dependsOn?: string;
+  /** Hide the field (and don't require it) unless this returns true, e.g. no body for GET requests. */
+  show?: (a: ActionOf<T>) => boolean;
   min?: number;
   max?: number;
   step?: number;
+  placeholder?: string;
+  /** Label of the empty choice in an optional select (default "(none)"). */
+  emptyLabel?: string;
   hint?: string;
 }
 
 export interface LabelCtx {
   obs?: ObsState;
   deck?: Deck;
+  ext?: ExtState;
 }
 
 type Spec<T extends ActionType, V> = V | ((a: ActionOf<T>) => V);
@@ -83,10 +112,12 @@ export interface ActionMeta<T extends ActionType = ActionType> {
   activeBg?: Spec<T, string | undefined>;
   /** Defaults to 'press'. */
   behavior?: Spec<T, Behavior>;
-  fields: FieldDef[];
+  fields: FieldDef<T>[];
   create: () => ActionOf<T>;
   autoLabel: (a: ActionOf<T>, ctx: LabelCtx) => string;
   confirmByDefault?: boolean;
+  /** Only works when the server allows commands (STREAMDECK_ENABLE_COMMANDS=1). */
+  needsCommands?: boolean;
 }
 
 const mdi = (name: string): IconRef => ({ set: 'mdi', name });
@@ -120,6 +151,38 @@ const MEDIA_LABELS: Record<ActionOf<'obs.media'>['action'], string> = {
 
 const inputName = (ref: { name: string; uuid?: string }, obs?: ObsState) =>
   (obs && resolveInput(obs, ref)?.name) || ref.name;
+
+const PLAYER_COMMANDS: Record<ActionOf<'media.player'>['command'], { label: string; icon: string }> = {
+  playPause: { label: 'Play/Pause', icon: 'play' },
+  next: { label: 'Next Track', icon: 'skip-next' },
+  previous: { label: 'Previous Track', icon: 'skip-previous' },
+  stop: { label: 'Stop', icon: 'stop' },
+};
+
+const VOLUME_TARGETS = { output: 'Speakers', input: 'Mic' } as const;
+
+export const STATS: Record<StatMetric, { label: string; option: string; icon: string }> = {
+  cpu: { label: 'CPU', option: 'CPU load', icon: 'cpu-64-bit' },
+  memory: { label: 'RAM', option: 'Memory (RAM) in use', icon: 'memory' },
+  cpuTemp: { label: 'CPU temp', option: 'CPU temperature', icon: 'thermometer' },
+  gpu: { label: 'GPU', option: 'GPU load (NVIDIA)', icon: 'expansion-card' },
+  gpuTemp: { label: 'GPU temp', option: 'GPU temperature (NVIDIA)', icon: 'thermometer' },
+  gpuMemory: { label: 'VRAM', option: 'GPU memory in use (NVIDIA)', icon: 'expansion-card-variant' },
+};
+
+function volumeIcon(a: ActionOf<'system.volume'>, muted: boolean): IconRef {
+  if (a.mode === 'step') return mdi((a.step ?? 5) >= 0 ? 'volume-plus' : 'volume-minus');
+  if (a.target === 'input') return mdi(muted ? 'microphone-off' : 'microphone');
+  return mdi(muted ? 'volume-off' : 'volume-high');
+}
+
+function urlHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
 
 type MetaTable = { [T in ActionType]: ActionMeta<T> };
 
@@ -409,6 +472,232 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'obs.profile', name: '' }),
     autoLabel: (a) => a.name || 'Profile',
   },
+  'media.player': {
+    type: 'media.player',
+    label: 'Media Keys',
+    description: 'Play, pause or skip music and videos playing on the PC (Spotify, browsers, VLC, …).',
+    category: 'Media',
+    icon: (a) => mdi(PLAYER_COMMANDS[a.command].icon),
+    activeIcon: (a) => mdi(a.command === 'playPause' ? 'pause' : PLAYER_COMMANDS[a.command].icon),
+    fields: [
+      {
+        key: 'command',
+        label: 'Command',
+        kind: 'select',
+        options: Object.entries(PLAYER_COMMANDS).map(([value, c]) => ({ value, label: c.label })),
+      },
+      {
+        key: 'player',
+        label: 'Player',
+        kind: 'mediaPlayer',
+        optional: true,
+        emptyLabel: 'Whichever played last',
+        placeholder: 'e.g. spotify (empty: whichever played last)',
+      },
+      { key: 'nowPlaying', label: 'Show the song and cover art', kind: 'checkbox' },
+    ],
+    create: () => ({ type: 'media.player', command: 'playPause', nowPlaying: true }),
+    autoLabel: (a, { ext }) => (a.nowPlaying && ext && followedPlayer(ext, a.player)?.title) || PLAYER_COMMANDS[a.command].label,
+  },
+  'system.volume': {
+    type: 'system.volume',
+    label: 'System Volume',
+    description: 'Mute or change the PC’s speakers or microphone (its default devices), or use a fader.',
+    category: 'System',
+    icon: (a) => volumeIcon(a, false),
+    activeIcon: (a) => volumeIcon(a, true),
+    activeBg: (a) => (a.mode === 'step' ? undefined : COLORS.red),
+    behavior: (a) => (a.mode === 'fader' ? 'fader' : 'press'),
+    fields: [
+      {
+        key: 'target',
+        label: 'Device',
+        kind: 'select',
+        options: [
+          { value: 'output', label: 'Speakers / headphones (default output)' },
+          { value: 'input', label: 'Microphone (default input)' },
+        ],
+      },
+      {
+        key: 'mode',
+        label: 'Mode',
+        kind: 'select',
+        options: [
+          { value: 'toggleMute', label: 'Toggle mute' },
+          { value: 'mute', label: 'Mute' },
+          { value: 'unmute', label: 'Unmute' },
+          { value: 'step', label: 'Volume up or down' },
+          { value: 'fader', label: 'Fader (drag; tap to mute)' },
+        ],
+      },
+      {
+        key: 'step',
+        label: 'Step (%)',
+        kind: 'number',
+        min: -50,
+        max: 50,
+        step: 1,
+        show: (a) => a.mode === 'step',
+        hint: 'Negative numbers turn it down.',
+      },
+    ],
+    create: () => ({ type: 'system.volume', target: 'output', mode: 'toggleMute' }),
+    autoLabel: (a) => {
+      const name = VOLUME_TARGETS[a.target];
+      if (a.mode !== 'step') return name;
+      const step = a.step ?? 5;
+      return `${name} ${step >= 0 ? '+' : ''}${step}%`;
+    },
+  },
+  'system.stats': {
+    type: 'system.stats',
+    label: 'System Stats',
+    description: 'Show the PC’s CPU or GPU load, temperature or memory use, updated every 2 seconds. Tapping it does nothing.',
+    category: 'System',
+    icon: (a) => mdi(STATS[a.metric].icon),
+    behavior: 'display',
+    fields: [
+      {
+        key: 'metric',
+        label: 'Show',
+        kind: 'select',
+        options: Object.entries(STATS).map(([value, s]) => ({ value, label: s.option })),
+      },
+    ],
+    create: () => ({ type: 'system.stats', metric: 'cpu' }),
+    autoLabel: (a) => STATS[a.metric].label,
+  },
+  'system.hotkey': {
+    type: 'system.hotkey',
+    label: 'Keyboard Shortcut',
+    description: 'Press keys on the PC, e.g. an app’s shortcut (uses ydotool). Can hold them while you hold the button.',
+    category: 'System',
+    icon: mdi('keyboard-outline'),
+    behavior: (a) => (a.hold ? 'hold' : 'press'),
+    fields: [
+      {
+        key: 'keys',
+        label: 'Keys',
+        kind: 'keys',
+        hint: 'Keys go by their position on a US keyboard (on a German one, Y and Z swap). Recording on your keyboard gets it right.',
+      },
+      { key: 'hold', label: 'Hold the keys while the button is held', kind: 'checkbox', hint: 'For push-to-talk and the like.' },
+    ],
+    create: () => ({ type: 'system.hotkey', keys: [] }),
+    autoLabel: (a) => shortcutLabel(a.keys) || 'Shortcut',
+  },
+  'kde.shortcut': {
+    type: 'kde.shortcut',
+    label: 'KDE Shortcut',
+    description: 'Trigger a KDE Plasma global shortcut, e.g. Overview, a Spectacle screenshot or Mute Microphone. Needs no setup.',
+    category: 'System',
+    icon: { set: 'simple-icons', name: 'kde' },
+    fields: [
+      { key: 'component', label: 'App', kind: 'kdeComponent', placeholder: 'e.g. kwin' },
+      { key: 'shortcut', label: 'Shortcut', kind: 'kdeShortcut', dependsOn: 'component', placeholder: 'e.g. Overview' },
+    ],
+    create: () => ({ type: 'kde.shortcut', component: '', shortcut: '' }),
+    autoLabel: (a) => a.title || a.shortcut || 'KDE Shortcut',
+  },
+  'system.command': {
+    type: 'system.command',
+    label: 'Run Command',
+    description: 'Run a command on the PC, e.g. start an app or a script.',
+    category: 'System',
+    icon: mdi('console'),
+    needsCommands: true,
+    fields: [
+      {
+        key: 'command',
+        label: 'Command',
+        kind: 'multiline',
+        placeholder: 'e.g. ~/bin/lights-on.sh',
+        hint: 'Runs with sh -c in your home folder.',
+      },
+      {
+        key: 'detached',
+        label: 'Start an app (don’t wait for it)',
+        kind: 'checkbox',
+        hint: 'For programs that keep running, like a browser or a game.',
+      },
+      {
+        key: 'timeoutMs',
+        label: 'Timeout (ms)',
+        kind: 'number',
+        optional: true,
+        min: 1000,
+        max: 600000,
+        step: 1000,
+        placeholder: '30000',
+        show: (a) => !a.detached,
+        hint: 'The command is stopped if it takes longer.',
+      },
+    ],
+    create: () => ({ type: 'system.command', command: '' }),
+    autoLabel: (a) => a.command.trim().split(/\s+/)[0]?.split('/').pop() || 'Command',
+  },
+  'http.request': {
+    type: 'http.request',
+    label: 'Webhook',
+    description: 'Send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.',
+    category: 'Integrations',
+    icon: mdi('webhook'),
+    fields: [
+      {
+        key: 'method',
+        label: 'Method',
+        kind: 'select',
+        options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ value: m, label: m })),
+      },
+      { key: 'url', label: 'URL', kind: 'url', placeholder: 'http://homeassistant.local:8123/api/webhook/…' },
+      {
+        key: 'body',
+        label: 'Body',
+        kind: 'multiline',
+        optional: true,
+        show: (a) => a.method !== 'GET',
+        placeholder: '{"entity_id": "light.desk"}',
+        hint: 'Valid JSON is sent as application/json unless you set a Content-Type header.',
+      },
+      {
+        key: 'headers',
+        label: 'Headers',
+        kind: 'headers',
+        optional: true,
+        hint: 'Saved in the deck, so every paired device can read them (and so can backups).',
+      },
+      {
+        key: 'timeoutMs',
+        label: 'Timeout (ms)',
+        kind: 'number',
+        optional: true,
+        min: 500,
+        max: 60000,
+        step: 500,
+        placeholder: '10000',
+      },
+    ],
+    create: () => ({ type: 'http.request', method: 'POST', url: '' }),
+    autoLabel: (a) => urlHost(a.url) || 'Webhook',
+  },
+  macro: {
+    type: 'macro',
+    label: 'Macro',
+    description: 'Run several actions in a row, with pauses if you like (e.g. switch scene, unmute the mic, start recording).',
+    category: 'Macros',
+    icon: mdi('playlist-play'),
+    fields: [
+      { key: 'steps', label: 'Steps', kind: 'macroSteps' },
+      {
+        key: 'stopOnError',
+        label: 'Stop when a step fails',
+        kind: 'checkbox',
+        hint: 'Otherwise the remaining steps still run.',
+      },
+    ],
+    create: () => ({ type: 'macro', steps: [], stopOnError: true }),
+    autoLabel: () => 'Macro',
+  },
   'deck.page': {
     type: 'deck.page',
     label: 'Open Page / Folder',
@@ -440,6 +729,11 @@ const pick = <V>(spec: Spec<ActionType, V> | undefined, action: Action): V | und
 
 export const ACTION_TYPES = Object.keys(ACTION_META) as ActionType[];
 
+/** The action types this server can run (Run Command only when commands are allowed). */
+export function availableActionTypes(commands: boolean): ActionType[] {
+  return ACTION_TYPES.filter((t) => commands || !ACTION_META[t].needsCommands);
+}
+
 export function actionMeta(type: ActionType): ActionMeta<ActionType> {
   return ACTION_META[type] as unknown as ActionMeta<ActionType>;
 }
@@ -464,17 +758,30 @@ export function actionActiveBg(action: Action): string | undefined {
   return pick(metaFor(action).activeBg, action);
 }
 
+/** Fields the editor shows for this action right now (some depend on other fields). */
+export function visibleFields(action: Action): FieldDef[] {
+  return metaFor(action).fields.filter((f) => !f.show || f.show(action));
+}
+
 /** Names of required fields that are still empty (the editor blocks saving until they're set). */
 export function missingFields(action: Action): string[] {
   const values = action as unknown as Record<string, unknown>;
-  return metaFor(action)
-    .fields.filter((f) => !f.optional)
+  const missing = visibleFields(action)
+    .filter((f) => !f.optional)
     .filter((f) => {
       const v = values[f.key];
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;
       if (f.kind === 'number') return typeof v !== 'number' || Number.isNaN(v);
+      if (f.kind === 'checkbox') return false;
+      if (f.kind === 'macroSteps' || f.kind === 'keys') return !Array.isArray(v) || v.length === 0;
       return typeof v !== 'string' || v === '';
     })
     .map((f) => f.label);
+  if (action.type === 'macro') {
+    action.steps.forEach((step, i) => {
+      if ('action' in step) missing.push(...missingFields(step.action).map((name) => `step ${i + 1} ${name.toLowerCase()}`));
+    });
+  }
+  return missing;
 }
 

@@ -1,5 +1,6 @@
 // WebSocket protocol between the browser and the server.
 // Client → server messages are defined (and validated) by ClientMsgSchema in schema.ts.
+import type { ExtState } from './ext-types.ts';
 import type { ObsState } from './obs-types.ts';
 import type { ClientMsg, Deck, DeckOp } from './schema.ts';
 
@@ -12,6 +13,8 @@ export interface ServerInfo {
   hostname: string;
   /** URLs other devices can use to reach the deck. */
   urls: string[];
+  /** Whether Run Command buttons work (the server was started with STREAMDECK_ENABLE_COMMANDS=1). */
+  commands: boolean;
 }
 
 export interface PairingInfo {
@@ -28,12 +31,25 @@ export interface SettingsView {
 
 export type ToastLevel = 'info' | 'error';
 
+/** KDE global shortcuts by app, for the KDE Shortcut editor (query 'kdeShortcuts'). */
+export interface KdeShortcut {
+  id: string;
+  name: string;
+}
+
+export interface KdeComponent {
+  id: string;
+  name: string;
+  shortcuts: KdeShortcut[];
+}
+
 export type ServerMsg =
   | { t: 'hello'; protocol: number; needsAuth: boolean }
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }
-  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; obs: ObsState; info: ServerInfo }
+  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; obs: ObsState; ext: ExtState; info: ServerInfo }
   | { t: 'deck'; deck: Deck }
   | { t: 'obs'; obs: ObsState; serverTime: number }
+  | { t: 'ext'; ext: ExtState }
   | { t: 'meters'; levels: Record<string, number> }
   | { t: 'result'; reqId: number; ok: true; data?: unknown }
   | { t: 'result'; reqId: number; ok: false; error: string }

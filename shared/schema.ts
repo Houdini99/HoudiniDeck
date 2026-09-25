@@ -1,7 +1,10 @@
 // Single source of truth for persisted data (deck, settings) and client→server messages.
 // The server validates with these zod schemas; the browser only imports the inferred types.
 import { z } from 'zod';
+import { actionBehavior } from './actions-meta.ts';
 import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
+import { STAT_METRICS } from './ext-types.ts';
+import { KEY_NAMES } from './keys.ts';
 
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'Invalid id');
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colors must look like #rrggbb');
@@ -19,7 +22,15 @@ export const ObsRefSchema = z.object({
 
 const Toggle3 = z.enum(['toggle', 'start', 'stop']);
 
-export const ActionSchema = z.discriminatedUnion('type', [
+// Header names are HTTP tokens; values must be one line of Latin-1 text (what fetch accepts).
+const HeaderName = z.string().regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$/, 'Header names are letters, digits and - (e.g. Authorization)');
+const HeaderValue = z
+  .string()
+  .max(4000)
+  .regex(/^[\t\x20-\x7e\x80-\xff]*$/, 'Header values must be one line of plain text');
+
+/** Everything a button can do except macros and page navigation; these can also be macro steps. */
+const StepActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('obs.scene'),
     scene: ObsRefSchema,
@@ -65,6 +76,88 @@ export const ActionSchema = z.discriminatedUnion('type', [
     type: z.literal('obs.media'),
     input: ObsRefSchema,
     action: z.enum(['playPause', 'play', 'pause', 'restart', 'stop', 'next', 'previous']),
+  }),
+  z.object({
+    type: z.literal('http.request'),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('POST'),
+    url: z.url({ protocol: /^https?$/, message: 'Use an http:// or https:// URL' }).max(2000),
+    headers: z
+      .record(HeaderName, HeaderValue)
+      .refine((h) => Object.keys(h).length <= 20, 'At most 20 headers')
+      .optional(),
+    body: z.string().max(20_000).optional(),
+    timeoutMs: z.number().int().min(500).max(60_000).optional(),
+  }),
+  z.object({
+    type: z.literal('media.player'),
+    command: z.enum(['playPause', 'next', 'previous', 'stop']).default('playPause'),
+    /** playerctl player name (e.g. "spotify"); empty = whichever player was active last. */
+    player: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/, 'Player names are letters, digits, dots, - and _ (e.g. spotify)')
+      .optional(),
+    /** Show the song's title and cover art on the button. */
+    nowPlaying: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('system.volume'),
+    target: z.enum(['output', 'input']).default('output'),
+    mode: z.enum(['toggleMute', 'mute', 'unmute', 'step', 'fader']).default('toggleMute'),
+    /** Percentage points per press in step mode (negative lowers the volume). */
+    step: z.number().int().min(-50).max(50).optional(),
+  }),
+  z.object({ type: z.literal('system.stats'), metric: z.enum(STAT_METRICS).default('cpu') }),
+  z.object({
+    type: z.literal('system.hotkey'),
+    /** Linux key names, pressed in this order and released in reverse (e.g. KEY_LEFTCTRL, KEY_M). */
+    keys: z.array(z.enum(KEY_NAMES)).min(1, 'Choose at least one key').max(8),
+    /** Keep the keys down while the button is held (e.g. push-to-talk). */
+    hold: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('kde.shortcut'),
+    /** kglobalaccel component, e.g. "kwin" or "org.kde.spectacle.desktop". */
+    component: z.string().trim().min(1).max(200),
+    /** The shortcut's unique name in that component, e.g. "Overview". */
+    shortcut: z.string().trim().min(1).max(200),
+    /** Its friendly name, shown as the default label. */
+    title: z.string().max(200).optional(),
+  }),
+  z.object({
+    type: z.literal('system.command'),
+    /** Run with `sh -c` in the home folder. */
+    command: z.string().trim().min(1).max(4000),
+    /** Start it and don't wait (for apps that keep running). */
+    detached: z.boolean().optional(),
+    timeoutMs: z.number().int().min(1000).max(600_000).optional(),
+  }),
+]);
+
+export const MAX_MACRO_STEPS = 20;
+
+const MacroStepSchema = z.union([
+  z.object({ action: StepActionSchema }),
+  z.object({ delayMs: z.number().int().min(0).max(60_000) }),
+]);
+
+export const ActionSchema = z.discriminatedUnion('type', [
+  ...StepActionSchema.options,
+  z.object({
+    type: z.literal('macro'),
+    steps: z
+      .array(MacroStepSchema)
+      .min(1, 'Add at least one step')
+      .max(MAX_MACRO_STEPS)
+      .superRefine((steps, ctx) => {
+        steps.forEach((step, i) => {
+          if ('action' in step && actionBehavior(step.action) !== 'press') {
+            ctx.addIssue({ code: 'custom', message: `Step ${i + 1}: push-to-talk and faders can’t be macro steps`, path: [i] });
+          }
+        });
+      }),
+    /** Skip the remaining steps after one fails (otherwise keep going and report at the end). */
+    stopOnError: z.boolean().default(true),
   }),
   // Navigation actions never reach the server's executors; the browser handles them.
   z.object({ type: z.literal('deck.page'), pageId: Id }),
@@ -185,14 +278,18 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hold'), pageId: Id, buttonId: Id, down: z.boolean() }),
   z.object({ t: z.literal('fader'), pageId: Id, buttonId: Id, pos: z.number().min(0).max(1) }),
   z.object({ t: z.literal('op'), reqId: ReqId, op: DeckOpSchema }),
-  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys']) }),
+  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers', 'kdeShortcuts']) }),
   z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
+  /** The stats tiles this browser shows (polled only while someone looks at them). */
+  z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),
 ]);
 
 export type ObsRef = z.infer<typeof ObsRefSchema>;
 export type Action = z.infer<typeof ActionSchema>;
+export type StepAction = z.infer<typeof StepActionSchema>;
+export type MacroStep = z.infer<typeof MacroStepSchema>;
 export type ActionType = Action['type'];
 export type ActionOf<T extends ActionType> = Extract<Action, { type: T }>;
 export type IconRef = z.infer<typeof IconRefSchema>;

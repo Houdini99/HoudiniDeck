@@ -8,6 +8,15 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Mute, push-to-talk/push-to-mute, and volume faders with live meters.
   - Stream, record (pause, split, chapters), replay buffer and virtual camera.
   - Transitions, screenshots, scene collections and profiles, OBS hotkeys, and media sources.
+- **Beyond OBS:**
+  - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
+  - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
+  - Live system stats tiles: CPU load and temperature, memory, and NVIDIA GPU load, temperature and memory.
+  - Keyboard shortcuts sent to the PC, optionally held while you hold the button (push-to-talk).
+  - Any KDE Plasma global shortcut (Overview, Spectacle, Mute Microphone, …), picked from a list. Needs no setup.
+- **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
+- **Run Command (off by default):** a button starts a program or script on the PC. See [Security](#security).
+  - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
   - Drag-and-drop editing.
@@ -22,6 +31,16 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 
 - Node.js 24.2 or newer. Node runs the TypeScript server directly, so there's no build step for the server.
 - OBS Studio 28 or newer, which has obs-websocket 5 built in.
+- Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
+- Optional: `ydotool`, for keyboard shortcuts. It types through the kernel, so it works on Wayland:
+
+  ```bash
+  sudo pacman -S ydotool
+  pacman -Ql ydotool | grep service           # shows where its service unit is
+  systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
+  ```
+
+  The ydotool service needs write access to `/dev/uinput`.
 
 ## Quick start
 
@@ -77,6 +96,7 @@ Everything can be set from the UI. These environment variables, optionally in a 
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL`/`OBS_PASSWORD` are set, Settings can't change the connection |
 | `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `STREAMDECK_ENABLE_COMMANDS` | – | `1` allows Run Command buttons. Only this variable can turn them on, never the web UI |
 
 ### Data and backups
 
@@ -102,6 +122,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now virtual-streamdeck.service
 ```
 
+To allow Run Command buttons in the service, put `STREAMDECK_ENABLE_COMMANDS=1` in `.env`. Apps they start need your desktop session's variables. Plasma normally passes them to systemd; if the log warns that `WAYLAND_DISPLAY` is not set, run `systemctl --user import-environment WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` and restart the service.
+
 Read the logs with `journalctl --user -u virtual-streamdeck -f`. After updating the code, run `npm run build` and `systemctl --user restart virtual-streamdeck`. Open tablets reload by themselves.
 
 ## Security
@@ -116,6 +138,13 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Other websites are refused:** WebSocket connections and uploads from a different origin are rejected.
 - **Secrets stay on the server:** the OBS password is never sent to browsers, and `settings.json` is readable only by you.
 - **Uploads:** only real images are accepted (checked by content), and they're served with `nosniff` and a sandboxing CSP.
+- **Run Command buttons are off by default.**
+  - Turned on, they let every paired device run any program as you. So they only work when the server was started with `STREAMDECK_ENABLE_COMMANDS=1`, and the web UI can't change that.
+  - While they're off, command buttons are dimmed and refused, and none can be added, changed or imported. Existing ones can still be moved, relabeled or deleted.
+  - Commands run with `sh -c` in your home folder; the OBS password is kept out of their environment.
+- **Webhooks:**
+  - A paired device can make the PC send HTTP requests to any `http://` or `https://` address, including services on your network.
+  - Headers (e.g. an API token) are saved in the deck, so every paired device and every backup file can read them.
 
 Don't forward the port to the internet. For access away from home, use your VPN (e.g. WireGuard).
 
@@ -139,7 +168,8 @@ npm run typecheck   # tsc + svelte-check
 ```
 shared/   types, zod schemas and logic used by both sides
           (actions-meta.ts = action catalog, feedback.ts = how buttons look)
-server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storage, mock OBS
+server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storage, mock OBS,
+          action executors (actions/) and helpers for other programs such as playerctl (system/)
 web/      Svelte 5 app (deck, editor, settings)
 tests/    node:test suites
 deploy/   systemd user unit
@@ -149,10 +179,10 @@ deploy/   systemd user unit
 
 1. **Schema:** add it to `ActionSchema` in `shared/schema.ts`.
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts` (label, category, icon, form fields, behavior).
-3. **Executor:** handle it on the server. `server/actions/dispatch.ts` routes by the `type` prefix; OBS actions live in `server/obs/execute.ts`.
-4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`.
+3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
+4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, webhooks, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
@@ -161,6 +191,9 @@ The editor, validation and multi-device sync pick it up automatically. What's pl
   - If `my-pc.local` doesn't resolve on that phone, use the IP address instead.
 - **"OBS rejected the password":** copy the password again from *Show Connect Info* in OBS into Settings.
 - **"Can't reach OBS":** OBS isn't running, or its WebSocket server is off (Tools → WebSocket Server Settings).
+- **Media keys are dimmed:** no media player is running, or `playerctl` isn't installed. Run `playerctl -l` in a terminal: it should list your players.
+- **Keyboard shortcuts do nothing:** the toast says whether `ydotool` is missing or its service isn't running. `ydotool key 29:1 29:0` in a terminal (taps Ctrl) should run without an error.
+- **System volume buttons are dimmed:** `wpctl get-volume @DEFAULT_AUDIO_SINK@` should print the volume. If the deck runs as a systemd service, it needs to run as your user (it does with the included user unit).
 - **The tablet's screen turns off:**
   - Keep-awake needs one tap after the page loads.
   - Over plain `http://`, browsers only allow a workaround, so also consider raising the tablet's auto-lock time.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { actionBehavior } from '$shared/actions-meta.ts';
   import { slotKey } from '$shared/deck-utils.ts';
   import { buttonVisual } from '$shared/feedback.ts';
   import type { Button, Page } from '$shared/schema.ts';
@@ -132,7 +133,7 @@
           onpointerdown={(e) => onEditPointerDown(e, slot)}
           onkeydown={(e) => onEditKey(e, slot)}
         >
-          {#if button.tap?.type === 'obs.volume'}
+          {#if button.tap && actionBehavior(button.tap) === 'fader'}
             <VolumeTile {page} {button} interactive={false} />
           {:else}
             <DeckButton {page} {button} interactive={false} />
@@ -140,7 +141,7 @@
         </div>
       {:else if button}
         <div class="cell" data-slot={slot}>
-          {#if button.tap?.type === 'obs.volume'}
+          {#if button.tap && actionBehavior(button.tap) === 'fader'}
             <VolumeTile {page} {button} />
           {:else}
             <DeckButton {page} {button} />
@@ -167,7 +168,7 @@
     style:width="{drag.w}px"
     style:height="{drag.h}px"
   >
-    <ButtonFace visual={buttonVisual(drag.button, { obs: store.obs!, deck: store.deck!, now: store.now })} />
+    <ButtonFace visual={buttonVisual(drag.button, store.visualCtx)} />
   </div>
 {/if}
 

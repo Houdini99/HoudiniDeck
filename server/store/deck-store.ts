@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -24,14 +25,18 @@ export function defaultDeck(): Deck {
   };
 }
 
-/** data/deck.json: pages and buttons. Every save is atomic; older versions rotate into data/backups/. */
-export class DeckStore {
+/**
+ * data/deck.json: pages and buttons. Every save is atomic; older versions rotate into data/backups/.
+ * Emits 'change' after each save.
+ */
+export class DeckStore extends EventEmitter<{ change: [deck: Deck] }> {
   private lastBackupAt = 0;
   private readonly dir: string;
   private readonly log: Logger;
   deck: Deck;
 
   private constructor(dir: string, deck: Deck, log: Logger) {
+    super();
     this.dir = dir;
     this.deck = deck;
     this.log = log;
@@ -77,6 +82,7 @@ export class DeckStore {
     const saved = { ...next, revision: this.deck.revision + 1 };
     await writeJsonAtomic(this.path, saved);
     this.deck = saved;
+    this.emit('change', saved);
     return saved;
   }
 

@@ -1,5 +1,7 @@
 // End-to-end: real server on a random port, talking to the mock OBS, driven over WebSocket/HTTP.
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { WebSocket } from 'ws';
 import { startApp, type App } from '../server/app.ts';
@@ -51,6 +53,7 @@ test('a browser on the PC itself needs no key', async () => {
   const init = await c.next('init');
   assert.equal(init.obs.connection, 'connected');
   assert.equal(init.deck.pages.length, 1);
+  assert.equal(typeof init.ext.media.available, 'boolean', 'state from outside OBS comes along');
   c.ws.close();
 });
 
@@ -228,4 +231,73 @@ test('changing the OBS address without a password drops the saved one', async ()
     await second.close();
     await tmp.cleanup();
   }
+});
+
+test('webhook buttons call their URL when pressed', async () => {
+  const hits: string[] = [];
+  const hook = createServer((req, res) => {
+    hits.push(`${req.method} ${req.url}`);
+    res.writeHead(204).end();
+  });
+  await new Promise<void>((resolve) => hook.listen(0, '127.0.0.1', resolve));
+  try {
+    const c = connect(`localhost:${app.port}`);
+    const init = await c.next('init');
+    const pageId = init.deck.pages[0].id;
+    const url = `http://127.0.0.1:${(hook.address() as AddressInfo).port}/api/webhook/deck`;
+    const set = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot: '0-1', button: { tap: { type: 'http.request', url } } } });
+    assert.equal(set.ok, true);
+    const buttonId = (set.ok && (set.data as { buttonId: string }).buttonId) || '';
+    c.ws.send(JSON.stringify({ t: 'press', pageId, buttonId, which: 'tap' }));
+    await waitFor(() => hits.length > 0, 3000, 'webhook call');
+    assert.deepEqual(hits, ['POST /api/webhook/deck'], 'POST is the default method');
+    c.ws.close();
+  } finally {
+    hook.close();
+  }
+});
+
+test('a macro runs its steps on OBS in order', async () => {
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  const pageId = init.deck.pages[0].id;
+  const tap = {
+    type: 'macro',
+    steps: [{ action: { type: 'obs.scene', scene: { name: 'Just Chatting' }, target: 'program' } }, { delayMs: 50 }, { action: { type: 'obs.record', mode: 'start' } }],
+  };
+  const set = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot: '0-2', button: { tap } } });
+  assert.equal(set.ok, true);
+  const buttonId = (set.ok && (set.data as { buttonId: string }).buttonId) || '';
+  c.ws.send(JSON.stringify({ t: 'press', pageId, buttonId, which: 'tap' }));
+  await waitFor(() => app.bridge.state.programScene === 'Just Chatting', 3000, 'scene switched');
+  await waitFor(() => app.bridge.state.record.state === 'started', 3000, 'recording started');
+  c.ws.close();
+});
+
+test('Run Command buttons are refused unless the server allows commands', async () => {
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  assert.equal(init.info.commands, false, 'off by default, and the browser is told');
+  const res = await c.request({
+    t: 'op',
+    op: { op: 'button.set', pageId: init.deck.pages[0].id, slot: '1-0', button: { tap: { type: 'system.command', command: 'id' } } },
+  });
+  assert.equal(res.ok, false);
+  assert.match(res.ok ? '' : res.error, /STREAMDECK_ENABLE_COMMANDS=1/);
+  c.ws.close();
+});
+
+test('stats tiles on screen get live CPU and memory readings', async () => {
+  const c = connect(`localhost:${app.port}`);
+  await c.next('init');
+  c.ws.send(JSON.stringify({ t: 'stats', metrics: ['cpu', 'memory'] }));
+  const msg = await waitFor(
+    () => c.messages.findLast((m): m is Extract<ServerMsg, { t: 'ext' }> => m.t === 'ext' && typeof m.ext.stats.cpu === 'number'),
+    4000,
+    'a CPU reading',
+  );
+  assert.ok(msg.ext.stats.cpu! >= 0 && msg.ext.stats.cpu! <= 100);
+  assert.ok(msg.ext.stats.memory!.used > 0 && msg.ext.stats.memory!.used < msg.ext.stats.memory!.total);
+  c.ws.close();
+  await waitFor(() => Object.keys(app.ext.state.stats).length === 0, 3000, 'readings stop when no one looks');
 });

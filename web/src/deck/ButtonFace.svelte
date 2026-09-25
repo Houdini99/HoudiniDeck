@@ -5,7 +5,10 @@
 
   let { visual, showLabel = true }: { visual: ButtonVisual; showLabel?: boolean } = $props();
 
-  const bleed = $derived(!!visual.icon && 'upload' in visual.icon);
+  // Cover art fills the button; if it can't be loaded, the icon shows instead.
+  let failedImage = $state('');
+  const image = $derived(visual.image && visual.image !== failedImage ? visual.image : undefined);
+  const bleed = $derived(!!image || (!!visual.icon && 'upload' in visual.icon));
   const labelShown = $derived(showLabel && !!visual.label);
 </script>
 
@@ -22,7 +25,19 @@
 >
   <!-- Sizes below use cqi, which resolve against .face (a size container) only inside it. -->
   <div class="inner">
-    {#if visual.icon}
+    {#if visual.gauge}
+      <div class="gauge" class:with-label={labelShown}>
+        <span class="gauge-value">{visual.gauge.text}</span>
+        {#if visual.gauge.detail}<span class="gauge-detail">{visual.gauge.detail}</span>{/if}
+        {#if visual.gauge.level !== undefined}
+          <span class="gauge-track"><span class="gauge-fill {visual.gauge.tone ?? ''}" style:--level={visual.gauge.level}></span></span>
+        {/if}
+      </div>
+    {:else if image}
+      <div class="icon-wrap">
+        <img class="art" src={image} alt="" draggable="false" onerror={() => (failedImage = image)} />
+      </div>
+    {:else if visual.icon}
       <div class="icon-wrap" class:with-label={labelShown}><Icon icon={visual.icon} cover={bleed} /></div>
     {/if}
     {#if labelShown}
@@ -99,6 +114,58 @@
     width: 100%;
     height: 100%;
     margin: 0;
+  }
+  .gauge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .gauge-value {
+    font-size: clamp(14px, 30cqi, 56px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .gauge.with-label .gauge-value {
+    font-size: clamp(12px, 25cqi, 48px);
+  }
+  .gauge-detail {
+    margin-top: 3cqi;
+    font-size: clamp(8px, 10cqi, 15px);
+    font-weight: 600;
+    opacity: 0.75;
+  }
+  .gauge-track {
+    display: block;
+    width: 62cqi;
+    height: max(3px, 4cqi);
+    margin-top: 5cqi;
+    overflow: hidden;
+    border-radius: 99px;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+  }
+  .gauge-fill {
+    display: block;
+    width: calc(var(--level) * 100%);
+    height: 100%;
+    border-radius: inherit;
+    background: #5b8cff;
+    transition: width 0.4s ease-out;
+  }
+  .gauge-fill.warm {
+    background: #f0a020;
+  }
+  .gauge-fill.hot {
+    background: #e5484d;
+  }
+  .art {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+    -webkit-user-drag: none;
   }
   .bleed .label {
     position: absolute;

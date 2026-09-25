@@ -5,14 +5,10 @@ import type { OBSWebSocket } from 'obs-websocket-js/json';
 import { mulToDb, posToMul } from '../../shared/fader.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from '../../shared/obs-resolve.ts';
 import type { ObsInput, ObsState } from '../../shared/obs-types.ts';
-import type { Action, ObsRef } from '../../shared/schema.ts';
+import type { ObsRef } from '../../shared/schema.ts';
+import { ActionError, type ActionOfPrefix, type Phase } from '../actions/executor.ts';
 
-/** An expected failure with a message fit for the person pressing the button. */
-export class ActionError extends Error {}
-
-export type ObsAction = Extract<Action, { type: `obs.${string}` }>;
-
-export type Phase = { kind: 'press' } | { kind: 'hold'; down: boolean } | { kind: 'fader'; pos: number };
+export type ObsAction = ActionOfPrefix<'obs'>;
 
 export interface ExecuteOptions {
   screenshotDir: string;

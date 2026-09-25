@@ -2,7 +2,7 @@
 
 A browser-based Stream Deck for OBS. A Node server (`server/`) holds one obs-websocket connection and syncs a Svelte 5 web app (`web/`) on every device on the LAN. Code shared by both lives in `shared/`. See `README.md` for features and setup.
 
-**Start here:** `docs/ROADMAP.md`. Phases 1–2 are done. It lists the checks still pending against the real OBS and the full Phase 3 plan. Pick the next unchecked item there, and tick it off (and update the roadmap) when it's done.
+**Start here:** `docs/ROADMAP.md`. Phases 1–3 are done except Discord. It lists the checks still pending on the real PC (OBS, and the Phase 3 helper programs) and what's left. Pick the next unchecked item there, and tick it off (and update the roadmap) when it's done.
 
 ## Commands
 
@@ -36,6 +36,7 @@ npm run build && npm start   # production on :3325
 
 - **The built-in browser pane is usually hidden,** so screenshots lag behind and CSS transitions freeze. Verify state with `read_page`, `find` or JS evaluation, and click by element `ref` when possible.
 - **Simulating OBS quitting:** the mock (`npm run dev:mock`) prints its PID. `kill -USR2 <pid>` toggles OBS off and on. Don't use `SIGUSR1`: Node reserves it for the debugger.
+- **Helper programs** (playerctl, wpctl, ydotool, busctl, nvidia-smi) run through `server/system/process.ts`, never a shell, and tests pass fakes. To click through their buttons in `dev:mock` without the real programs, put small fake scripts first in `PATH`.
 - **The PC's own browser skips pairing.** To test pairing, open the LAN IP (`http://192.168.1.20:5173`). The mock data directory is `.data-mock/`.
 
 ## Working agreements
