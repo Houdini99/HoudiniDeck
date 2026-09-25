@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -50,14 +51,26 @@ test('DeckStore.replace bumps the revision, persists and backs up', async (t) =>
   assert.match(backups[0], /^deck-.*-import\.json$/);
 });
 
-test('SettingsStore generates a key once, keeps it, and writes the file 0600', async (t) => {
+test('SettingsStore generates a key once, keeps it, and only the user can read the file', async (t) => {
   const { dir, cleanup } = await tempDir();
   t.after(cleanup);
   const first = await SettingsStore.load(dir, silentLogger);
   assert.ok(first.settings.accessKey.length >= 40);
   assert.equal(first.settings.obs.url, 'ws://127.0.0.1:4455');
-  const mode = (await stat(first.path)).mode & 0o777;
-  assert.equal(mode, 0o600);
+  if (process.platform === 'win32') {
+    // Windows ignores file modes. Nothing may be inherited from the folder, and only this user may be
+    // listed, besides SYSTEM and Administrators (which can read any file anyway).
+    const acl = execFileSync('icacls', [first.path], { encoding: 'utf8' });
+    const entries = [...acl.matchAll(/(\S+):\(/g)].map((m) => m[1]);
+    assert.doesNotMatch(acl, /\(I\)/, `nothing inherited:\n${acl}`);
+    assert.ok(entries.some((e) => e.toLowerCase().endsWith(`\\${process.env.USERNAME!.toLowerCase()}`)), acl);
+    for (const entry of entries) {
+      assert.match(entry, new RegExp(`\\\\(${process.env.USERNAME}|SYSTEM|Administrators)$`, 'i'), `unexpected entry in:\n${acl}`);
+    }
+  } else {
+    const mode = (await stat(first.path)).mode & 0o777;
+    assert.equal(mode, 0o600);
+  }
   const second = await SettingsStore.load(dir, silentLogger);
   assert.equal(second.settings.accessKey, first.settings.accessKey);
 });

@@ -118,6 +118,8 @@ export interface ActionMeta<T extends ActionType = ActionType> {
   confirmByDefault?: boolean;
   /** Only works when the server allows commands (STREAMDECK_ENABLE_COMMANDS=1). */
   needsCommands?: boolean;
+  /** The operating systems (Node's process.platform) where the server can run it; unset means all. */
+  platforms?: readonly string[];
 }
 
 const mdi = (name: string): IconRef => ({ set: 'mdi', name });
@@ -182,6 +184,13 @@ function urlHost(url: string): string {
   } catch {
     return '';
   }
+}
+
+/** The program a command starts, without its folder: "lights-on.sh" for ~/bin/lights-on.sh, "obs64.exe" for "C:\…\obs64.exe". */
+function commandName(command: string): string {
+  const first = /^\s*(?:"([^"]*)"|(\S+))/.exec(command);
+  const program = first?.[1] ?? first?.[2] ?? '';
+  return program.split(/[\\/]/).pop() ?? '';
 }
 
 type MetaTable = { [T in ActionType]: ActionMeta<T> };
@@ -477,6 +486,7 @@ export const ACTION_META: MetaTable = {
     label: 'Media Keys',
     description: 'Play, pause or skip music and videos playing on the PC (Spotify, browsers, VLC, …).',
     category: 'Media',
+    platforms: ['linux', 'win32'],
     icon: (a) => mdi(PLAYER_COMMANDS[a.command].icon),
     activeIcon: (a) => mdi(a.command === 'playPause' ? 'pause' : PLAYER_COMMANDS[a.command].icon),
     fields: [
@@ -504,6 +514,7 @@ export const ACTION_META: MetaTable = {
     label: 'System Volume',
     description: 'Mute or change the PC’s speakers or microphone (its default devices), or use a fader.',
     category: 'System',
+    platforms: ['linux', 'win32'],
     icon: (a) => volumeIcon(a, false),
     activeIcon: (a) => volumeIcon(a, true),
     activeBg: (a) => (a.mode === 'step' ? undefined : COLORS.red),
@@ -570,8 +581,9 @@ export const ACTION_META: MetaTable = {
   'system.hotkey': {
     type: 'system.hotkey',
     label: 'Keyboard Shortcut',
-    description: 'Press keys on the PC, e.g. an app’s shortcut (uses ydotool). Can hold them while you hold the button.',
+    description: 'Press keys on the PC, e.g. an app’s shortcut. Can hold them while you hold the button.',
     category: 'System',
+    platforms: ['linux', 'win32'],
     icon: mdi('keyboard-outline'),
     behavior: (a) => (a.hold ? 'hold' : 'press'),
     fields: [
@@ -591,6 +603,7 @@ export const ACTION_META: MetaTable = {
     label: 'KDE Shortcut',
     description: 'Trigger a KDE Plasma global shortcut, e.g. Overview, a Spectacle screenshot or Mute Microphone. Needs no setup.',
     category: 'System',
+    platforms: ['linux'],
     icon: { set: 'simple-icons', name: 'kde' },
     fields: [
       { key: 'component', label: 'App', kind: 'kdeComponent', placeholder: 'e.g. kwin' },
@@ -611,8 +624,8 @@ export const ACTION_META: MetaTable = {
         key: 'command',
         label: 'Command',
         kind: 'multiline',
-        placeholder: 'e.g. ~/bin/lights-on.sh',
-        hint: 'Runs with sh -c in your home folder.',
+        placeholder: 'e.g. ~/bin/lights-on.sh, or on Windows: start "" notepad',
+        hint: 'Runs in your home folder, with sh -c (Linux) or cmd.exe /c (Windows).',
       },
       {
         key: 'detached',
@@ -634,7 +647,7 @@ export const ACTION_META: MetaTable = {
       },
     ],
     create: () => ({ type: 'system.command', command: '' }),
-    autoLabel: (a) => a.command.trim().split(/\s+/)[0]?.split('/').pop() || 'Command',
+    autoLabel: (a) => commandName(a.command) || 'Command',
   },
   'http.request': {
     type: 'http.request',
@@ -729,9 +742,15 @@ const pick = <V>(spec: Spec<ActionType, V> | undefined, action: Action): V | und
 
 export const ACTION_TYPES = Object.keys(ACTION_META) as ActionType[];
 
+/** Whether the server's operating system can run this action (unknown platform: assume yes). */
+export function actionSupported(type: ActionType, platform: string | undefined): boolean {
+  const platforms = ACTION_META[type].platforms;
+  return !platform || !platforms || platforms.includes(platform);
+}
+
 /** The action types this server can run (Run Command only when commands are allowed). */
-export function availableActionTypes(commands: boolean): ActionType[] {
-  return ACTION_TYPES.filter((t) => commands || !ACTION_META[t].needsCommands);
+export function availableActionTypes(commands: boolean, platform?: string): ActionType[] {
+  return ACTION_TYPES.filter((t) => (commands || !ACTION_META[t].needsCommands) && actionSupported(t, platform));
 }
 
 export function actionMeta(type: ActionType): ActionMeta<ActionType> {

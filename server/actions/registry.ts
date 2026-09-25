@@ -3,13 +3,15 @@
 import type { Logger } from '../log.ts';
 import type { ObsBridge } from '../obs/bridge.ts';
 import type { AudioWatcher } from '../system/audio.ts';
-import type { MediaWatcher } from '../system/media.ts';
+import type { MediaSource } from '../system/media.ts';
 import type { Runner } from '../system/process.ts';
+import type { WinRequester } from '../system/windows/helper.ts';
+import type { WindowsMediaWatcher } from '../system/windows/media.ts';
 import { runAction, type ExecutorRegistry } from './executor.ts';
 import { httpExecutor } from './http.ts';
 import { kdeExecutor } from './kde.ts';
 import { macroExecutor } from './macro.ts';
-import { mediaExecutor } from './media.ts';
+import { mediaExecutor, windowsMediaExecutor } from './media.ts';
 import { obsExecutor } from './obs.ts';
 import { systemExecutor } from './system.ts';
 
@@ -21,19 +23,21 @@ export interface ExecutorDeps {
   /** Runs helper programs (playerctl, …). */
   run: Runner;
   /** Knows which media player the buttons show. */
-  media: Pick<MediaWatcher, 'currentInstance'>;
+  media: Pick<MediaSource, 'currentInstance'>;
   /** Re-reads the system volume after a change. */
   audio: Pick<AudioWatcher, 'refresh'>;
   /** Run Command buttons work (STREAMDECK_ENABLE_COMMANDS=1). */
   commandsEnabled: boolean;
+  /** On Windows: the helper and media watcher, used instead of the Linux programs. */
+  windows?: { helper: WinRequester; media: Pick<WindowsMediaWatcher, 'command'> };
 }
 
 export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
   const registry: ExecutorRegistry = {
     obs: obsExecutor(deps.bridge, deps.screenshotDir),
     http: httpExecutor(deps.log),
-    media: mediaExecutor(deps.run, deps.media),
-    system: systemExecutor({ run: deps.run, audio: deps.audio, commandsEnabled: deps.commandsEnabled }),
+    media: deps.windows ? windowsMediaExecutor(deps.windows.media) : mediaExecutor(deps.run, deps.media),
+    system: systemExecutor({ run: deps.run, audio: deps.audio, commandsEnabled: deps.commandsEnabled, windows: deps.windows?.helper }),
     kde: kdeExecutor(deps.run),
     // Macro steps run through this same registry.
     macro: macroExecutor({ run: (action, phase) => runAction(registry, action, phase), log: deps.log }),

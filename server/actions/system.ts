@@ -1,10 +1,14 @@
-// The system.* family: the PC itself. The default speakers and microphone (via wpctl), and
-// shell commands (only when the server was started with STREAMDECK_ENABLE_COMMANDS=1).
+// The system.* family: the PC itself. The default speakers and microphone (via wpctl), key presses
+// (via ydotool), and shell commands (only when the server was started with STREAMDECK_ENABLE_COMMANDS=1).
+// On Windows, the helper does the speakers, microphone and keys (see ../system/windows/).
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
 import { ydotoolKeyArgs } from '../../shared/keys.ts';
-import { DEFAULT_COMMAND_TIMEOUT_MS, launchCommand, outputTail, runCommand } from '../system/command.ts';
+import { DEFAULT_COMMAND_TIMEOUT_MS, commandNotFound, commandProgram, launchCommand, outputTail, runCommand } from '../system/command.ts';
 import type { RunResult, Runner } from '../system/process.ts';
+import type { WinRequester } from '../system/windows/helper.ts';
+import { pressWindowsKeys } from '../system/windows/keys.ts';
+import { setWindowsVolume } from '../system/windows/volume.ts';
 import { ActionError, type Executor, type Phase } from './executor.ts';
 
 export interface SystemDeps {
@@ -13,6 +17,8 @@ export interface SystemDeps {
   audio: Pick<AudioWatcher, 'refresh'>;
   /** STREAMDECK_ENABLE_COMMANDS=1; only the environment can turn this on. */
   commandsEnabled: boolean;
+  /** On Windows: the helper, which sets the volume and presses keys instead of wpctl and ydotool. */
+  windows?: WinRequester;
 }
 
 export function systemExecutor(deps: SystemDeps): Executor<'system'> {
@@ -25,7 +31,7 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
       case 'system.stats':
         return; // a display: tapping it does nothing
       case 'system.hotkey':
-        return pressKeys(action, phase, deps.run);
+        return deps.windows ? pressWindowsKeys(deps.windows, action, phase) : pressKeys(action, phase, deps.run);
       default:
         throw new Error(`No executor for ${(action satisfies never as { type: string }).type}`);
     }
@@ -72,9 +78,9 @@ async function runCommandAction(action: ActionOf<'system.command'>, enabled: boo
   if (!enabled) throw new ActionError('Running commands is turned off. Start the deck with STREAMDECK_ENABLE_COMMANDS=1 to allow it.');
   if (action.detached) {
     const code = await launchCommand(action.command);
-    if (code === 127) throw new ActionError(`Command not found: ${action.command.trim().split(/\s+/)[0]}`);
-    if (code) throw new ActionError(`The command stopped right away (exit code ${code})`);
-    return;
+    if (!code) return; // still running, or done already
+    if (await commandNotFound(action.command, code)) throw new ActionError(`Command not found: ${commandProgram(action.command)}`);
+    throw new ActionError(`The command stopped right away (exit code ${code})`);
   }
   const timeoutMs = action.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const res = await runCommand(action.command, timeoutMs);
@@ -86,6 +92,11 @@ async function runCommandAction(action: ActionOf<'system.command'>, enabled: boo
 }
 
 async function setVolume(action: ActionOf<'system.volume'>, phase: Phase, deps: SystemDeps): Promise<void> {
+  if (deps.windows) {
+    await setWindowsVolume(deps.windows, action, phase);
+    await deps.audio.refresh();
+    return;
+  }
   let res: RunResult;
   try {
     res = await deps.run('wpctl', volumeArgs(action, phase));

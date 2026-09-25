@@ -7,6 +7,7 @@ import { WebSocket } from 'ws';
 import { startApp, type App } from '../server/app.ts';
 import { startMockObs, type MockObs } from '../server/dev/mock-obs.ts';
 import { readEnv } from '../server/env.ts';
+import { deckRunningOn } from '../server/network.ts';
 import type { ServerMsg } from '../shared/protocol.ts';
 import { tempDir, waitFor } from './helpers.ts';
 
@@ -190,6 +191,19 @@ test('uploads need the key from LAN devices and are served with a locked-down CS
     ]),
   });
   assert.equal(notImage.statusCode, 415);
+});
+
+test('a second start can tell the deck already runs (to open it in the browser instead)', async () => {
+  assert.equal(await deckRunningOn(app.port), true);
+  const other = createServer((_req, res) => res.end('not the deck')).listen(0, '127.0.0.1');
+  await new Promise((resolve) => other.once('listening', resolve));
+  try {
+    assert.equal(await deckRunningOn((other.address() as AddressInfo).port), false, 'some other program on the port');
+  } finally {
+    other.close();
+  }
+  assert.equal(readEnv({ STREAMDECK_OPEN_BROWSER: '1' }).openBrowser, true);
+  assert.equal(readEnv({}).openBrowser, false);
 });
 
 test('icons and health endpoints', async () => {

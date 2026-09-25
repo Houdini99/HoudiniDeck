@@ -1,0 +1,7 @@
+# The same line ends everywhere (Git for Windows would otherwise check files out with CRLF),
+# except for Windows batch files and installer scripts, which want CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.iss text eol=crlf
+*.png binary
+*.ico binary

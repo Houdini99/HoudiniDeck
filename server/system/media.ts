@@ -1,5 +1,6 @@
 // Follows media players (MPRIS) with `playerctl --follow` while at least one browser is connected:
 // one process for whichever player was active last, plus one per player a button names.
+// Windows has its own watcher in windows/media.ts.
 import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +41,59 @@ export function parsePlayerLine(line: string): PlayerLine | null {
   };
 }
 
+/** What the rest of the server needs from a media watcher (playerctl here, the Windows helper in windows/media.ts). */
+export interface MediaSource {
+  /** Follow players only while a browser is connected. */
+  setActive(active: boolean): void;
+  setDeck(deck: Deck): void;
+  /** The player the buttons show, for commands that don't name one. */
+  currentInstance(): string | undefined;
+  /** The local file behind a cover-art token (see ArtFiles). */
+  artFile(token: string): string | undefined;
+  /** Names of the running players, for the editor. */
+  listPlayers(): Promise<string[]>;
+  stop(): void;
+}
+
+/** Which track's cover art something currently serves, and under which token. */
+export interface ArtSlot {
+  art?: { key: string; token: string };
+}
+
+/** Local cover art, served at /api/media/art/<token>: only files a player currently shows, each under a random token. */
+export class ArtFiles {
+  private readonly files = new Map<string, string>();
+
+  file(token: string): string | undefined {
+    return ART_TOKEN_RE.test(token) ? this.files.get(token) : undefined;
+  }
+
+  /**
+   * The URL for a track's art. `key` identifies the track: a new one gets a new token, since some
+   * players reuse one file name for every cover. Undefined if `path` throws.
+   */
+  url(slot: ArtSlot, key: string, path: () => string): string | undefined {
+    if (slot.art?.key !== key) {
+      this.release(slot);
+      let file: string;
+      try {
+        file = path();
+      } catch {
+        return undefined;
+      }
+      const token = randomBytes(16).toString('hex');
+      this.files.set(token, file);
+      slot.art = { key, token };
+    }
+    return `/api/media/art/${slot.art!.token}`;
+  }
+
+  release(slot: ArtSlot): void {
+    if (slot.art) this.files.delete(slot.art.token);
+    slot.art = undefined;
+  }
+}
+
 /** Players that buttons on the deck name explicitly (each gets its own follower). */
 export function mediaSelectors(deck: Deck): string[] {
   const names = new Set<string>();
@@ -61,20 +115,18 @@ export interface MediaWatcherDeps {
   restartDelaysMs?: number[];
 }
 
-interface Follower {
+interface Follower extends ArtSlot {
   proc?: LineProcess;
   timer?: NodeJS.Timeout;
   failures: number;
-  /** Art currently served for this player: which track it belongs to and under which token. */
-  art?: { key: string; token: string };
 }
 
-export class MediaWatcher {
+export class MediaWatcher implements MediaSource {
   private active = false;
   private selectors = new Set<string>(['']);
   private readonly followers = new Map<string, Follower>();
-  /** token → local file, for cover art the players give as file:// URLs. */
-  private readonly artFiles = new Map<string, string>();
+  /** Cover art the players give as file:// URLs. */
+  private readonly art = new ArtFiles();
   private warnedMissing = false;
   private readonly deps: MediaWatcherDeps;
 
@@ -109,7 +161,7 @@ export class MediaWatcher {
   }
 
   artFile(token: string): string | undefined {
-    return ART_TOKEN_RE.test(token) ? this.artFiles.get(token) : undefined;
+    return this.art.file(token);
   }
 
   /** Names of the running players (without the instance suffix), for the editor. */
@@ -182,7 +234,7 @@ export class MediaWatcher {
     this.followers.delete(selector);
     follower.proc?.kill();
     clearTimeout(follower.timer);
-    this.releaseArt(follower);
+    this.art.release(follower);
     delete this.media.players[selector];
   }
 
@@ -192,7 +244,7 @@ export class MediaWatcher {
       const { artUrl, ...rest } = line;
       info = { ...rest, art: this.artFor(follower, line) };
     } else {
-      this.releaseArt(follower);
+      this.art.release(follower);
     }
     this.media.players[selector] = info;
     this.deps.store.changed();
@@ -201,40 +253,14 @@ export class MediaWatcher {
   /** A URL the browser can load for the player's cover art: https as is, local files via /api/media/art. */
   private artFor(follower: Follower, line: PlayerLine): string | undefined {
     const url = line.artUrl;
-    if (url.startsWith('https://')) {
-      this.releaseArt(follower);
-      return url;
-    }
-    if (!url.startsWith('file://')) {
-      this.releaseArt(follower);
-      return undefined;
-    }
-    // A new token for each new track: some players reuse one file name for every cover.
-    const key = `${url}\n${line.artist}\n${line.title}`;
-    if (follower.art?.key !== key) {
-      let path: string;
-      try {
-        path = fileURLToPath(url);
-      } catch {
-        this.releaseArt(follower);
-        return undefined;
-      }
-      this.releaseArt(follower);
-      const token = randomBytes(16).toString('hex');
-      this.artFiles.set(token, path);
-      follower.art = { key, token };
-    }
-    return `/api/media/art/${follower.art!.token}`;
-  }
-
-  private releaseArt(follower: Follower): void {
-    if (follower.art) this.artFiles.delete(follower.art.token);
-    follower.art = undefined;
+    if (url.startsWith('file://')) return this.art.url(follower, `${url}\n${line.artist}\n${line.title}`, () => fileURLToPath(url));
+    this.art.release(follower);
+    return url.startsWith('https://') ? url : undefined;
   }
 }
 
 /** Serves local cover art. Only files a player currently reports, and only if they're images. */
-export function registerMediaRoutes(app: FastifyInstance, media: Pick<MediaWatcher, 'artFile'>): void {
+export function registerMediaRoutes(app: FastifyInstance, media: Pick<MediaSource, 'artFile'>): void {
   app.get<{ Params: { token: string } }>('/api/media/art/:token', async (req, reply) => {
     const path = media.artFile(req.params.token);
     if (!path) return reply.code(404).send({ error: 'Not found' });

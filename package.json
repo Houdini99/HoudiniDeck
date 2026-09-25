@@ -8,12 +8,12 @@
     "node": ">=24.2"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,magenta \"PORT=3325 STREAMDECK_PUBLIC_PORT=5173 node --env-file-if-exists=.env --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
-    "dev:mock": "concurrently -k -n mock,server,web -c yellow,blue,magenta \"node --watch server/dev/mock-obs.ts\" \"PORT=3325 STREAMDECK_PUBLIC_PORT=5173 STREAMDECK_DATA_DIR=.data-mock OBS_URL=ws://127.0.0.1:4456 OBS_PASSWORD= node --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
+    "dev": "concurrently -k -n server,web -c blue,magenta \"cross-env PORT=3325 STREAMDECK_PUBLIC_PORT=5173 node --env-file-if-exists=.env --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
+    "dev:mock": "concurrently -k -n mock,server,web -c yellow,blue,magenta \"node --watch server/dev/mock-obs.ts\" \"cross-env PORT=3325 STREAMDECK_PUBLIC_PORT=5173 STREAMDECK_DATA_DIR=.data-mock OBS_URL=ws://127.0.0.1:4456 OBS_PASSWORD= node --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
     "mock-obs": "node server/dev/mock-obs.ts",
     "build": "vite build --config web/vite.config.ts",
-    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.ts",
-    "test": "LOG_LEVEL=error node --test \"tests/**/*.test.ts\"",
+    "start": "cross-env NODE_ENV=production node --env-file-if-exists=.env server/index.ts",
+    "test": "cross-env LOG_LEVEL=error node --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json && svelte-check --workspace web --tsconfig ./tsconfig.json --threshold warning"
   },
   "dependencies": {
@@ -33,6 +33,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
     "nosleep.js": "^0.12.0",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",

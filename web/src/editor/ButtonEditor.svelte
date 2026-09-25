@@ -55,7 +55,7 @@
 
   const page = $derived(store.deck?.pages.find((p) => p.id === target.pageId));
   // What the selects offer: what this server can run, plus whatever the button already has.
-  const available = $derived(availableActionTypes(store.info?.commands ?? false));
+  const available = $derived(availableActionTypes(store.info?.commands ?? false, store.info?.platform));
   function typesIn(category: string, current: ActionType | undefined): ActionType[] {
     const types = current && !available.includes(current) ? [...available, current] : available;
     return types.filter((t) => actionMeta(t).category === category);

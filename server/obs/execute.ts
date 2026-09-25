@@ -35,6 +35,11 @@ function audioInput(state: ObsState, ref: ObsRef): ObsInput {
   return input;
 }
 
+/** A source name as part of a file name: without the characters Windows (or Linux) forbids there. */
+export function safeFileName(name: string): string {
+  return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+}
+
 function timestamp(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -157,7 +162,7 @@ export async function executeObsAction(
         ? (resolveSourceName(state, action.source) ?? fail(`Source “${action.source.name}” not found in OBS`))
         : (state.programScene ?? fail('No program scene'));
       await mkdir(opts.screenshotDir, { recursive: true });
-      const file = join(opts.screenshotDir, `${source.replace(/[/\\]/g, '_')} ${timestamp()}.png`);
+      const file = join(opts.screenshotDir, `${safeFileName(source)} ${timestamp()}.png`);
       await obs.call('SaveSourceScreenshot', { sourceName: source, imageFormat: 'png', imageFilePath: file });
       return;
     }

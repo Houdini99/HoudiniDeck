@@ -77,7 +77,7 @@ class Store {
   dragOverPage = $state<string | null>(null);
 
   /** Everything a button needs to work out how it looks (only valid once deck and obs are set). */
-  visualCtx: VisualCtx = $derived({ obs: this.obs!, deck: this.deck!, ext: this.ext, now: this.now, commands: this.info?.commands });
+  visualCtx: VisualCtx = $derived({ obs: this.obs!, deck: this.deck!, ext: this.ext, now: this.now, commands: this.info?.commands, platform: this.info?.platform });
 
   currentPage: Page | undefined = $derived.by(() => {
     const deck = this.deck;
