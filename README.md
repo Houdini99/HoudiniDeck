@@ -152,7 +152,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. `server/actions/dispatch.ts` routes by the `type` prefix; OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`.
 
-The editor, validation and multi-device sync pick it up automatically. Planned: shell commands (off unless enabled on the server), webhooks, media keys via playerctl, system volume, macros, a CPU/GPU stats tile, ydotool hotkeys and Discord mute.
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, webhooks, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
