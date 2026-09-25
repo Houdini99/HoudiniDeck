@@ -5,6 +5,7 @@ import { behaviorOf } from './actions-meta.ts';
 import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, SOUND_NAME_RE, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
 import { STAT_METRICS } from './ext-types.ts';
 import { KEY_NAMES } from './keys.ts';
+import { OBS_STAT_METRICS } from './obs-types.ts';
 
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'Invalid id');
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colors must look like #rrggbb');
@@ -84,6 +85,8 @@ const StepActionSchema = z.discriminatedUnion('type', [
   }),
   /** Replace the text of a text source (Text GDI+ / FreeType 2). */
   z.object({ type: z.literal('obs.text'), input: ObsRefSchema, text: z.string().max(10_000).default('') }),
+  /** Shows how OBS is doing (a display, like the system stats tiles). */
+  z.object({ type: z.literal('obs.stats'), metric: z.enum(OBS_STAT_METRICS).default('dropped') }),
   /** Reload a browser source without its cache (e.g. stuck alerts). */
   z.object({ type: z.literal('obs.browserRefresh'), input: ObsRefSchema }),
   z.object({
@@ -261,6 +264,9 @@ export const ButtonSchema = z.object({
   bg: Color.optional(),
   fg: Color.optional(),
   hideLabel: z.boolean().optional(),
+  /** Where the label goes (default bottom) and how big it is (default normal). */
+  labelPos: z.enum(['bottom', 'top', 'middle']).optional(),
+  labelSize: z.enum(['small', 'large']).optional(),
   /** Overrides used while the button's state is "active" (live, muted, visible, …). */
   active: AppearanceSchema.optional(),
   tap: ActionSchema.optional(),

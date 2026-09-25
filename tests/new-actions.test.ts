@@ -258,3 +258,32 @@ test('Open Website: xdg-open on Linux, the URL handler on Windows, only http(s),
   await assert.rejects(openUrl('https://x.test/', async () => Promise.reject(enoent), 'linux'), /not installed/);
   await openUrl('https://x.test/', async () => null, 'linux'); // still running after a second: fine
 });
+
+test('OBS Stats tiles: stream health while live, OBS load always', () => {
+  const obs = emptyObsState('connected');
+  obs.stats = { cpu: 12.345, memoryMb: 500, fps: 59.94, renderSkipped: 1, renderTotal: 1000, outputSkipped: 30, outputTotal: 1000 };
+  const deck = deckWith({});
+  const tile = (metric: 'fps' | 'cpu' | 'bitrate' | 'dropped' | 'render' | 'encode') =>
+    buttonVisual({ id: metric, tap: { type: 'obs.stats', metric } }, { obs, deck, ext: emptyExtState(), now: 0 });
+  assert.equal(tile('fps').gauge?.text, '60');
+  assert.equal(tile('fps').label, 'FPS');
+  assert.equal(tile('cpu').gauge?.text, '12.3%');
+  assert.equal(tile('render').gauge?.text, '0.1%');
+  assert.deepEqual(tile('encode').gauge, { text: '3.0%', detail: '30 frames', level: 0.6, tone: 'hot' });
+  assert.equal(tile('bitrate').disabled, true, 'dimmed while not live');
+  assert.equal(tile('dropped').gauge?.text, '–');
+
+  obs.stream = { state: 'started', durationMs: 0, sampledAt: 0, bitrateKbps: 6012, skippedFrames: 12, totalFrames: 1000, congestion: 0.3 };
+  assert.deepEqual(tile('bitrate').gauge, { text: '6.0', detail: 'Mbit/s', tone: 'warm' });
+  assert.equal(tile('dropped').gauge?.text, '1.2%');
+  assert.equal(tile('dropped').gauge?.tone, 'warm');
+  obs.stream.bitrateKbps = 850;
+  assert.equal(tile('bitrate').gauge?.text, '850');
+  assert.equal(buttonVisual({ id: 'x', tap: { type: 'obs.stats', metric: 'fps' } }, { obs: emptyObsState(), deck, ext: emptyExtState(), now: 0 }).offline, true);
+});
+
+test('label position and size reach the look; anything else is refused', () => {
+  const v = look({ id: 'x', label: 'Hi', labelPos: 'top', labelSize: 'large' }, deckWith({}));
+  assert.deepEqual([v.labelPos, v.labelSize], ['top', 'large']);
+  assert.equal(DeckSchema.safeParse(deckWith({ '0-0': { id: 'x', labelPos: 'left' as never } })).success, false);
+});

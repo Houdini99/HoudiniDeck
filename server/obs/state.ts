@@ -88,6 +88,9 @@ function renameSourceInItems(s: ObsState, from: string, to: string): void {
   }
 }
 
+/** A new stream starts counting bytes and dropped frames from zero. */
+const FRESH_COUNTS = { bytes: undefined, bitrateKbps: undefined, skippedFrames: undefined, totalFrames: undefined };
+
 export function applyOutputState(out: ObsOutput, raw: string, now: number): void {
   switch (raw) {
     case 'OBS_WEBSOCKET_OUTPUT_STARTING':
@@ -95,13 +98,13 @@ export function applyOutputState(out: ObsOutput, raw: string, now: number): void
       out.paused = false;
       break;
     case 'OBS_WEBSOCKET_OUTPUT_STARTED':
-      Object.assign(out, { state: 'started', paused: false, durationMs: 0, sampledAt: now });
+      Object.assign(out, { state: 'started', paused: false, durationMs: 0, sampledAt: now }, FRESH_COUNTS);
       break;
     case 'OBS_WEBSOCKET_OUTPUT_STOPPING':
       out.state = 'stopping';
       break;
     case 'OBS_WEBSOCKET_OUTPUT_STOPPED':
-      Object.assign(out, { state: 'stopped', paused: false, durationMs: 0, sampledAt: now });
+      Object.assign(out, { state: 'stopped', paused: false, durationMs: 0, sampledAt: now }, FRESH_COUNTS);
       break;
     case 'OBS_WEBSOCKET_OUTPUT_RECONNECTING':
       out.state = 'reconnecting';
@@ -511,6 +514,14 @@ function syncOutput(out: ObsOutput, d: Json, now: number): void {
     return;
   }
   if (out.state === 'started' || out.state === 'reconnecting') out.state = d.outputReconnecting ? 'reconnecting' : 'started';
+  // The bitrate comes from the bytes sent since the previous reading (bits per ms = kbit/s).
+  if (typeof d.outputBytes === 'number') {
+    const elapsed = now - out.sampledAt;
+    if (out.bytes !== undefined && d.outputBytes >= out.bytes && elapsed > 0) out.bitrateKbps = ((d.outputBytes - out.bytes) * 8) / elapsed;
+    out.bytes = d.outputBytes;
+  }
+  if (typeof d.outputSkippedFrames === 'number') out.skippedFrames = d.outputSkippedFrames;
+  if (typeof d.outputTotalFrames === 'number') out.totalFrames = d.outputTotalFrames;
   out.durationMs = d.outputDuration ?? out.durationMs;
   out.sampledAt = now;
   if (d.outputPaused !== undefined) out.paused = !!d.outputPaused;
@@ -538,6 +549,9 @@ function outputFrom(d: Json | undefined, now: number): ObsOutput {
     sampledAt: now,
     paused: !!d.outputPaused,
     congestion: d.outputCongestion,
+    bytes: d.outputBytes,
+    skippedFrames: d.outputSkippedFrames,
+    totalFrames: d.outputTotalFrames,
   };
 }
 

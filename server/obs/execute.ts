@@ -183,6 +183,8 @@ export async function executeObsAction(
       await obs.call('PressInputPropertiesButton', { inputName: input.name, propertyName: 'refreshnocache' });
       return;
     }
+    case 'obs.stats':
+      return; // a display: tapping it does nothing
     case 'obs.collection':
       await obs.call('SetCurrentSceneCollection', { sceneCollectionName: action.name });
       return;

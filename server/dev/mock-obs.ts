@@ -384,9 +384,10 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
       outputTimecode: '00:00:00.000',
       outputDuration: duration(state.stream),
       outputCongestion: 0,
-      outputBytes: 0,
-      outputSkippedFrames: 0,
-      outputTotalFrames: 0,
+      // About 6000 kbit/s, and now and then a dropped frame.
+      outputBytes: Math.round(duration(state.stream) * (740 + Math.random() * 20)),
+      outputSkippedFrames: Math.floor(duration(state.stream) / 20_000),
+      outputTotalFrames: Math.floor((duration(state.stream) / 1000) * 60),
     }),
     StartStream: () => setOutput('stream', true),
     StopStream: () => setOutput('stream', false),

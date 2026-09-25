@@ -6,7 +6,7 @@ import { mulToPos } from './fader.ts';
 import { formatClock, formatDb, formatDuration, formatTimeOfDay } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from './obs-resolve.ts';
 import { timerReading } from './timers.ts';
-import type { ObsOutput, ObsState } from './obs-types.ts';
+import type { ObsOutput, ObsStatMetric, ObsState } from './obs-types.ts';
 import type { Action, ActionOf, Button, Deck, IconRef } from './schema.ts';
 
 export interface VisualCtx {
@@ -50,6 +50,8 @@ export interface ButtonVisual extends ActionStatus {
   icon?: IconRef;
   bg: string;
   fg: string;
+  labelPos?: Button['labelPos'];
+  labelSize?: Button['labelSize'];
 }
 
 export function outputElapsed(out: ObsOutput, now: number): number {
@@ -131,6 +133,44 @@ function counterStatus(action: ActionOf<'counter'>, ctx: VisualCtx, buttonId: st
 }
 
 /** `buttonId`: the button the action belongs to (counters, timers, toggles and sounds keep their state per button). */
+const percent = (part = 0, total = 0) => (total > 0 ? (part / total) * 100 : 0);
+
+function obsStatsStatus(metric: ObsStatMetric, obs: ObsState): ActionStatus {
+  const stats = obs.stats;
+  const live = obs.stream.state === 'started' || obs.stream.state === 'reconnecting';
+  switch (metric) {
+    case 'bitrate': {
+      if (!live) return { active: false, disabled: true, gauge: { text: '–' } };
+      const kbps = obs.stream.bitrateKbps;
+      if (kbps === undefined) return { active: false, gauge: { text: '…' } };
+      const congestion = obs.stream.congestion ?? 0;
+      const tone = congestion >= 0.5 ? 'hot' : congestion >= 0.2 ? 'warm' : undefined;
+      const [text, detail] = kbps >= 1000 ? [(kbps / 1000).toFixed(1), 'Mbit/s'] : [String(Math.round(kbps)), 'kbit/s'];
+      return { active: false, gauge: { text, detail, tone } };
+    }
+    case 'dropped': {
+      if (!live) return { active: false, disabled: true, gauge: { text: '–' } };
+      const dropped = percent(obs.stream.skippedFrames, obs.stream.totalFrames);
+      return gauge(dropped, 5, `${dropped.toFixed(1)}%`, 1, 5, `${obs.stream.skippedFrames ?? 0} frames`);
+    }
+  }
+  if (!stats) return { active: false, gauge: { text: '–' } };
+  switch (metric) {
+    case 'fps':
+      return { active: false, gauge: { text: String(Math.round(stats.fps)) } };
+    case 'cpu':
+      return gauge(stats.cpu, 100, `${stats.cpu.toFixed(1)}%`, 50, 80);
+    case 'render': {
+      const lag = percent(stats.renderSkipped, stats.renderTotal);
+      return gauge(lag, 5, `${lag.toFixed(1)}%`, 0.5, 2, `${stats.renderSkipped} frames`);
+    }
+    case 'encode': {
+      const lag = percent(stats.outputSkipped, stats.outputTotal);
+      return gauge(lag, 5, `${lag.toFixed(1)}%`, 0.5, 2, `${stats.outputSkipped} frames`);
+    }
+  }
+}
+
 export function actionStatus(action: Action, ctx: VisualCtx, buttonId?: string): ActionStatus {
   const { obs, deck, ext, now } = ctx;
   if (unavailable(action, ctx)) return { active: false, disabled: true };
@@ -174,6 +214,8 @@ export function actionStatus(action: Action, ctx: VisualCtx, buttonId?: string):
     case 'obs.text':
     case 'obs.browserRefresh':
       return resolveInput(obs, action.input) ? { active: false } : { active: false, missing: true };
+    case 'obs.stats':
+      return obsStatsStatus(action.metric, obs);
     case 'obs.stream':
       return outputStatus(obs.stream, 'LIVE', 'live', now);
     case 'obs.record': {
@@ -277,6 +319,7 @@ export function buttonVisual(button: Button, ctx: VisualCtx, opts: { forceActive
   const baseIcon = button.icon ?? (action ? actionIcon(action) : undefined);
   const bg = button.bg ?? COLORS.bg;
   const fg = button.fg ?? COLORS.fg;
+  Object.assign(status, { labelPos: button.labelPos, labelSize: button.labelSize });
   if (!status.active) return { ...status, label: baseLabel, icon: baseIcon, bg, fg };
 
   // A custom base icon wins over the action's default active icon; state then shows through color.

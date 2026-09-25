@@ -40,6 +40,11 @@ export interface ObsOutput {
   paused?: boolean;
   reconnecting?: boolean;
   congestion?: number;
+  /** Streaming only: bytes sent so far, the bitrate between the last two readings, and network-dropped frames. */
+  bytes?: number;
+  bitrateKbps?: number;
+  skippedFrames?: number;
+  totalFrames?: number;
 }
 
 export interface ObsStats {
@@ -111,3 +116,7 @@ export function isTextInputKind(kind: string): boolean {
 }
 
 export const BROWSER_INPUT_KIND = 'browser_source';
+
+/** What an OBS Stats tile can show. */
+export const OBS_STAT_METRICS = ['fps', 'cpu', 'bitrate', 'dropped', 'render', 'encode'] as const;
+export type ObsStatMetric = (typeof OBS_STAT_METRICS)[number];

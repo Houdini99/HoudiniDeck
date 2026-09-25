@@ -25,7 +25,7 @@
   style:--fg={visual.fg}
 >
   <!-- Sizes below use cqi, which resolve against .face (a size container) only inside it. -->
-  <div class="inner">
+  <div class="inner {visual.labelPos ?? 'bottom'}">
     {#if visual.gauge}
       <div class="gauge" class:with-label={labelShown} style:--chars={Math.max(4, visual.gauge.text.length)}>
         <span class="gauge-value">{visual.gauge.text}</span>
@@ -39,10 +39,12 @@
         <img class="art" src={image} alt="" draggable="false" onerror={() => (failedImage = image)} />
       </div>
     {:else if visual.icon}
-      <div class="icon-wrap" class:with-label={labelShown}><Icon icon={visual.icon} cover={bleed} /></div>
+      <div class="icon-wrap" class:with-label={labelShown && visual.labelPos !== 'middle'} class:under-label={labelShown && visual.labelPos === 'middle' && !bleed}>
+        <Icon icon={visual.icon} cover={bleed} />
+      </div>
     {/if}
     {#if labelShown}
-      <div class="label">{visual.label}</div>
+      <div class="label {visual.labelSize ?? ''}">{visual.label}</div>
     {/if}
   </div>
   {#if visual.badge}
@@ -108,6 +110,33 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+  .label.small {
+    font-size: clamp(8px, 10cqi, 18px);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .label.large {
+    font-size: clamp(11px, 17cqi, 30px);
+  }
+  /* Label on top: above the icon (or at the top edge of a picture). */
+  .inner.top {
+    flex-direction: column-reverse;
+  }
+  /* Label in the middle: over the icon, which keeps its full size but steps back. */
+  .icon-wrap.under-label {
+    opacity: 0.35;
+  }
+  .inner.middle .label {
+    position: absolute;
+    top: 50%;
+    right: 6cqi;
+    left: 6cqi;
+    max-width: none;
+    text-shadow:
+      0 1px 3px rgb(0 0 0 / 0.9),
+      0 0 10px rgb(0 0 0 / 0.6);
+    transform: translateY(-50%);
   }
   .bleed .icon-wrap {
     position: absolute;
@@ -179,6 +208,20 @@
     padding: 16cqi 6cqi 7cqi;
     background: linear-gradient(transparent, rgb(0 0 0 / 0.78));
     color: #fff;
+  }
+  .bleed .inner.top .label {
+    top: 0;
+    bottom: auto;
+    padding: 7cqi 6cqi 16cqi;
+    background: linear-gradient(rgb(0 0 0 / 0.78), transparent);
+  }
+  .bleed .inner.middle .label {
+    top: 50%;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    padding: 4cqi 6cqi;
+    background: rgb(0 0 0 / 0.55);
   }
   /* The ring is drawn by a pseudo-element so its cqi width is relative to this button. */
   .program::after,

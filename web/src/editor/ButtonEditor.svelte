@@ -273,6 +273,24 @@
             <span>Show the label</span>
             <input type="checkbox" checked={!draft.hideLabel} onchange={(e) => (draft.hideLabel = !e.currentTarget.checked)} />
           </label>
+          {#if !draft.hideLabel}
+            <div class="row label-look">
+              <div class="segmented" role="group" aria-label="Label position">
+                {#each [['bottom', 'Bottom'], ['middle', 'Middle'], ['top', 'Top']] as const as [pos, name] (pos)}
+                  <button type="button" class:active={(draft.labelPos ?? 'bottom') === pos} onclick={() => (draft.labelPos = pos === 'bottom' ? undefined : pos)}>
+                    {name}
+                  </button>
+                {/each}
+              </div>
+              <div class="segmented" role="group" aria-label="Label size">
+                {#each [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']] as const as [size, name] (size)}
+                  <button type="button" class:active={(draft.labelSize ?? 'normal') === size} onclick={() => (draft.labelSize = size === 'normal' ? undefined : size)}>
+                    {name}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
           <div class="field">
             <span>Icon</span>
             <div class="row">
@@ -452,6 +470,9 @@
   .segmented button.active {
     background: var(--surface-3);
     color: var(--text);
+  }
+  .label-look {
+    gap: 10px;
   }
   .group {
     display: grid;

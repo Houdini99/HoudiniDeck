@@ -4,7 +4,7 @@ import { followedPlayer, type ExtState, type StatMetric } from './ext-types.ts';
 import { formatClock, prettyHotkey } from './format.ts';
 import { shortcutLabel } from './keys.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
-import type { ObsState } from './obs-types.ts';
+import type { ObsStatMetric, ObsState } from './obs-types.ts';
 import type { Action, ActionOf, ActionType, Deck, IconRef } from './schema.ts';
 
 export const COLORS = {
@@ -179,6 +179,15 @@ export const STATS: Record<StatMetric, { label: string; option: string; icon: st
   gpu: { label: 'GPU', option: 'GPU load (NVIDIA)', icon: 'expansion-card' },
   gpuTemp: { label: 'GPU temp', option: 'GPU temperature (NVIDIA)', icon: 'thermometer' },
   gpuMemory: { label: 'VRAM', option: 'GPU memory in use (NVIDIA)', icon: 'expansion-card-variant' },
+};
+
+export const OBS_STATS: Record<ObsStatMetric, { label: string; option: string; icon: string }> = {
+  dropped: { label: 'Dropped', option: 'Dropped frames (network, while live)', icon: 'network-strength-2-alert' },
+  bitrate: { label: 'Bitrate', option: 'Stream bitrate (while live)', icon: 'speedometer' },
+  fps: { label: 'FPS', option: 'Frames per second', icon: 'filmstrip' },
+  cpu: { label: 'OBS CPU', option: 'OBS’s CPU use', icon: 'cpu-64-bit' },
+  render: { label: 'Render lag', option: 'Frames missed because of rendering lag', icon: 'monitor-dashboard' },
+  encode: { label: 'Encode lag', option: 'Frames skipped because of encoding lag', icon: 'chip' },
 };
 
 function volumeIcon(a: ActionOf<'system.volume'>, muted: boolean): IconRef {
@@ -498,6 +507,24 @@ export const ACTION_META: MetaTable = {
     fields: [{ key: 'name', label: 'Hotkey', kind: 'hotkey' }],
     create: () => ({ type: 'obs.hotkey', name: '' }),
     autoLabel: (a) => (a.name ? prettyHotkey(a.name) : 'Hotkey'),
+  },
+  'obs.stats': {
+    type: 'obs.stats',
+    label: 'OBS Stats',
+    description: 'Show how the stream is doing: dropped frames, bitrate, frame rate, OBS’s CPU use or lag. Tapping it does nothing.',
+    category: 'More OBS',
+    icon: (a) => mdi(OBS_STATS[a.metric].icon),
+    behavior: 'display',
+    fields: [
+      {
+        key: 'metric',
+        label: 'Show',
+        kind: 'select',
+        options: Object.entries(OBS_STATS).map(([value, s]) => ({ value, label: s.option })),
+      },
+    ],
+    create: () => ({ type: 'obs.stats', metric: 'dropped' }),
+    autoLabel: (a) => OBS_STATS[a.metric].label,
   },
   'obs.collection': {
     type: 'obs.collection',
