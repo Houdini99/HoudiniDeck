@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { ACTION_TYPES, CATEGORIES, actionBehavior, actionMeta } from '$shared/actions-meta.ts';
+  import { CATEGORIES, actionBehavior, actionMeta, availableActionTypes } from '$shared/actions-meta.ts';
   import { MAX_MACRO_STEPS, type ActionType, type MacroStep, type StepAction } from '$shared/schema.ts';
+  import { store } from '../lib/store.svelte.ts';
   import UiIcon from '../lib/UiIcon.svelte';
   import ActionForm from './ActionForm.svelte';
 
@@ -8,13 +9,17 @@
   let { steps = $bindable() }: { steps: MacroStep[] } = $props();
 
   // No macros inside macros, no page navigation, and nothing that needs holding or dragging.
-  const STEP_TYPES = ACTION_TYPES.filter(
-    (t) => t !== 'macro' && !t.startsWith('deck.') && actionBehavior(actionMeta(t).create()) === 'press',
+  const stepTypes = $derived(
+    availableActionTypes(store.info?.commands ?? false).filter(
+      (t) => t !== 'macro' && !t.startsWith('deck.') && actionBehavior(actionMeta(t).create()) === 'press',
+    ),
   );
-  const groups = CATEGORIES.map((category) => ({
-    category,
-    types: STEP_TYPES.filter((t) => actionMeta(t).category === category),
-  })).filter((g) => g.types.length > 0);
+  /** The choices by category; `current` stays listed even if this server can't run it. */
+  const groupsFor = (current?: ActionType) =>
+    CATEGORIES.map((category) => ({
+      category,
+      types: [...stepTypes, ...(current && !stepTypes.includes(current) ? [current] : [])].filter((t) => actionMeta(t).category === category),
+    })).filter((g) => g.types.length > 0);
 
   const create = (type: string) => actionMeta(type as ActionType).create() as StepAction;
 
@@ -24,8 +29,8 @@
   }
 </script>
 
-{#snippet typeOptions()}
-  {#each groups as group (group.category)}
+{#snippet typeOptions(current?: ActionType)}
+  {#each groupsFor(current) as group (group.category)}
     <optgroup label={group.category}>
       {#each group.types as type (type)}
         <option value={type}>{actionMeta(type).label}</option>
@@ -42,7 +47,7 @@
           <span class="num">{i + 1}</span>
           {#if 'action' in step}
             <select aria-label="Step {i + 1}" value={step.action.type} onchange={(e) => (step.action = create(e.currentTarget.value))}>
-              {@render typeOptions()}
+              {@render typeOptions(step.action.type)}
             </select>
           {:else}
             <label class="pause">

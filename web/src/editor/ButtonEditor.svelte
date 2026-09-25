@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    ACTION_TYPES,
     CATEGORIES,
     COLORS,
     actionActiveIcon,
@@ -8,6 +7,7 @@
     actionBehavior,
     actionIcon,
     actionMeta,
+    availableActionTypes,
     missingFields,
   } from '$shared/actions-meta.ts';
   import { buttonVisual } from '$shared/feedback.ts';
@@ -54,6 +54,12 @@
   let error = $state('');
 
   const page = $derived(store.deck?.pages.find((p) => p.id === target.pageId));
+  // What the selects offer: what this server can run, plus whatever the button already has.
+  const available = $derived(availableActionTypes(store.info?.commands ?? false));
+  function typesIn(category: string, current: ActionType | undefined): ActionType[] {
+    const types = current && !available.includes(current) ? [...available, current] : available;
+    return types.filter((t) => actionMeta(t).category === category);
+  }
   const ctx = $derived(store.visualCtx);
   const previewVisual = $derived(buttonVisual({ ...draft, id: existing?.id ?? 'preview' } as Button, ctx, { forceActive: previewActive }));
   const autoLabel = $derived(draft.tap ? actionAutoLabel(draft.tap, ctx) : '');
@@ -207,7 +213,7 @@
               <option value="">Nothing</option>
               {#each CATEGORIES as category (category)}
                 <optgroup label={category}>
-                  {#each ACTION_TYPES.filter((t) => actionMeta(t).category === category) as type (type)}
+                  {#each typesIn(category, draft.tap?.type) as type (type)}
                     <option value={type}>{actionMeta(type).label}</option>
                   {/each}
                 </optgroup>
@@ -294,7 +300,7 @@
                   <option value="">Nothing</option>
                   {#each CATEGORIES as category (category)}
                     <optgroup label={category}>
-                      {#each ACTION_TYPES.filter((t) => actionMeta(t).category === category && t !== 'obs.volume') as type (type)}
+                      {#each typesIn(category, draft.longPress?.type).filter((t) => t !== 'obs.volume') as type (type)}
                         <option value={type}>{actionMeta(type).label}</option>
                       {/each}
                     </optgroup>

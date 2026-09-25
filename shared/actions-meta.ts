@@ -111,6 +111,8 @@ export interface ActionMeta<T extends ActionType = ActionType> {
   create: () => ActionOf<T>;
   autoLabel: (a: ActionOf<T>, ctx: LabelCtx) => string;
   confirmByDefault?: boolean;
+  /** Only works when the server allows commands (STREAMDECK_ENABLE_COMMANDS=1). */
+  needsCommands?: boolean;
 }
 
 const mdi = (name: string): IconRef => ({ set: 'mdi', name });
@@ -533,6 +535,43 @@ export const ACTION_META: MetaTable = {
       return `${name} ${step >= 0 ? '+' : ''}${step}%`;
     },
   },
+  'system.command': {
+    type: 'system.command',
+    label: 'Run Command',
+    description: 'Run a command on the PC, e.g. start an app or a script.',
+    category: 'System',
+    icon: mdi('console'),
+    needsCommands: true,
+    fields: [
+      {
+        key: 'command',
+        label: 'Command',
+        kind: 'multiline',
+        placeholder: 'e.g. ~/bin/lights-on.sh',
+        hint: 'Runs with sh -c in your home folder.',
+      },
+      {
+        key: 'detached',
+        label: 'Start an app (don’t wait for it)',
+        kind: 'checkbox',
+        hint: 'For programs that keep running, like a browser or a game.',
+      },
+      {
+        key: 'timeoutMs',
+        label: 'Timeout (ms)',
+        kind: 'number',
+        optional: true,
+        min: 1000,
+        max: 600000,
+        step: 1000,
+        placeholder: '30000',
+        show: (a) => !a.detached,
+        hint: 'The command is stopped if it takes longer.',
+      },
+    ],
+    create: () => ({ type: 'system.command', command: '' }),
+    autoLabel: (a) => a.command.trim().split(/\s+/)[0]?.split('/').pop() || 'Command',
+  },
   'http.request': {
     type: 'http.request',
     label: 'Webhook',
@@ -625,6 +664,11 @@ const pick = <V>(spec: Spec<ActionType, V> | undefined, action: Action): V | und
   typeof spec === 'function' ? (spec as (a: Action) => V)(action) : spec;
 
 export const ACTION_TYPES = Object.keys(ACTION_META) as ActionType[];
+
+/** The action types this server can run (Run Command only when commands are allowed). */
+export function availableActionTypes(commands: boolean): ActionType[] {
+  return ACTION_TYPES.filter((t) => commands || !ACTION_META[t].needsCommands);
+}
 
 export function actionMeta(type: ActionType): ActionMeta<ActionType> {
   return ACTION_META[type] as unknown as ActionMeta<ActionType>;

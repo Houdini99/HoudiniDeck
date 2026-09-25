@@ -273,3 +273,16 @@ test('a macro runs its steps on OBS in order', async () => {
   await waitFor(() => app.bridge.state.record.state === 'started', 3000, 'recording started');
   c.ws.close();
 });
+
+test('Run Command buttons are refused unless the server allows commands', async () => {
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  assert.equal(init.info.commands, false, 'off by default, and the browser is told');
+  const res = await c.request({
+    t: 'op',
+    op: { op: 'button.set', pageId: init.deck.pages[0].id, slot: '1-0', button: { tap: { type: 'system.command', command: 'id' } } },
+  });
+  assert.equal(res.ok, false);
+  assert.match(res.ok ? '' : res.error, /STREAMDECK_ENABLE_COMMANDS=1/);
+  c.ws.close();
+});

@@ -59,7 +59,15 @@ export async function startApp(env: Env): Promise<App> {
   }
   const actionLog = createLogger('actions');
   const dispatcher = new Dispatcher({
-    executors: createExecutors({ bridge, screenshotDir: join(picturesDir(), 'OBS'), log: actionLog, run: runProcess, media, audio }),
+    executors: createExecutors({
+      bridge,
+      screenshotDir: join(picturesDir(), 'OBS'),
+      log: actionLog,
+      run: runProcess,
+      media,
+      audio,
+      commandsEnabled: env.commandsEnabled,
+    }),
     getDeck: () => deckStore.deck,
     log: actionLog,
   });
@@ -74,7 +82,7 @@ export async function startApp(env: Env): Promise<App> {
     audio,
     dispatcher,
     buildId: await readBuildId(env.webDist),
-    info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort) }),
+    info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort), commands: env.commandsEnabled }),
     log: createLogger('hub'),
   });
   const http = await createHttpServer({ env, hub, bridge, media, settingsStore, log });

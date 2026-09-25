@@ -126,6 +126,7 @@ test('the executor runs wpctl, re-reads the volume and explains failures', async
       return answer;
     },
     audio: { refresh: async () => void refreshed++ },
+    commandsEnabled: false,
   });
   await execute(speakers, { kind: 'press' });
   assert.deepEqual(calls, [['set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle']]);
@@ -139,6 +140,7 @@ test('the executor runs wpctl, re-reads the volume and explains failures', async
       throw Object.assign(new Error('spawn wpctl ENOENT'), { code: 'ENOENT' });
     },
     audio: { refresh: async () => {} },
+    commandsEnabled: false,
   });
   await assert.rejects(missing(speakers, { kind: 'press' }), /wpctl is not installed/);
 });

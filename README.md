@@ -12,6 +12,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
   - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
 - **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
+- **Run Command (off by default):** a button starts a program or script on the PC. See [Security](#security).
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
@@ -83,6 +84,7 @@ Everything can be set from the UI. These environment variables, optionally in a 
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL`/`OBS_PASSWORD` are set, Settings can't change the connection |
 | `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `STREAMDECK_ENABLE_COMMANDS` | – | `1` allows Run Command buttons. Only this variable can turn them on, never the web UI |
 
 ### Data and backups
 
@@ -108,6 +110,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now virtual-streamdeck.service
 ```
 
+To allow Run Command buttons in the service, put `STREAMDECK_ENABLE_COMMANDS=1` in `.env`. Apps they start need your desktop session's variables. Plasma normally passes them to systemd; if the log warns that `WAYLAND_DISPLAY` is not set, run `systemctl --user import-environment WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` and restart the service.
+
 Read the logs with `journalctl --user -u virtual-streamdeck -f`. After updating the code, run `npm run build` and `systemctl --user restart virtual-streamdeck`. Open tablets reload by themselves.
 
 ## Security
@@ -122,6 +126,10 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Other websites are refused:** WebSocket connections and uploads from a different origin are rejected.
 - **Secrets stay on the server:** the OBS password is never sent to browsers, and `settings.json` is readable only by you.
 - **Uploads:** only real images are accepted (checked by content), and they're served with `nosniff` and a sandboxing CSP.
+- **Run Command buttons are off by default.**
+  - Turned on, they let every paired device run any program as you. So they only work when the server was started with `STREAMDECK_ENABLE_COMMANDS=1`, and the web UI can't change that.
+  - While they're off, command buttons are dimmed and refused, and none can be added, changed or imported. Existing ones can still be moved, relabeled or deleted.
+  - Commands run with `sh -c` in your home folder; the OBS password is kept out of their environment.
 - **Webhooks:**
   - A paired device can make the PC send HTTP requests to any `http://` or `https://` address, including services on your network.
   - Headers (e.g. an API token) are saved in the deck, so every paired device and every backup file can read them.

@@ -13,6 +13,8 @@ export interface VisualCtx {
   ext: ExtState;
   /** Current time on the server's clock (browser clock corrected by the measured offset). */
   now: number;
+  /** Whether the server runs Run Command buttons (they're dimmed otherwise). */
+  commands?: boolean;
 }
 
 export type Tone = 'live' | 'rec' | 'paused' | 'busy';
@@ -140,6 +142,8 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'http.request':
     case 'macro':
       return { active: false };
+    case 'system.command':
+      return { active: false, disabled: !ctx.commands };
     case 'system.volume': {
       const device = ext.audio.available ? ext.audio[action.target] : null;
       if (device === null) return { active: false, disabled: true };

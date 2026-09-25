@@ -27,9 +27,23 @@ async function printBanner(key: string, obsUrl: string): Promise<void> {
       `  or open ${pair}`,
       '',
       `  OBS: ${obsUrl}`,
+      ...(env.commandsEnabled ? ['  Run Command buttons are ON (STREAMDECK_ENABLE_COMMANDS=1): paired devices can run programs on this PC.'] : []),
       "  Other devices can't connect? Allow the port in your firewall (see README).",
       '',
     ].join('\n'),
+  );
+}
+
+/** Apps started by Run Command buttons need the desktop session's variables (e.g. under systemd). */
+function checkCommandEnvironment(): void {
+  if (!env.commandsEnabled) return;
+  const missing = [];
+  if (!process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) missing.push('WAYLAND_DISPLAY');
+  if (!process.env.DBUS_SESSION_BUS_ADDRESS) missing.push('DBUS_SESSION_BUS_ADDRESS');
+  if (missing.length === 0) return;
+  log.warn(
+    `${missing.join(' and ')} not set, so apps started by Run Command buttons may not open. ` +
+      `Under systemd, run: systemctl --user import-environment ${missing.join(' ')}`,
   );
 }
 
@@ -46,6 +60,7 @@ async function main(): Promise<void> {
   }
   await printBanner(app.settingsStore.settings.accessKey, app.settingsStore.obsConfig(env).url);
   log.info(`Data directory: ${env.dataDir}`);
+  checkCommandEnvironment();
 
   let stopping = false;
   const shutdown = async (signal: string) => {

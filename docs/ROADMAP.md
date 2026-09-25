@@ -85,11 +85,12 @@ For each action type:
   - A second tap while the macro is still running is refused.
   - Editor: `web/src/editor/MacroSteps.svelte`, a step list with a form per step, reordering and pauses.
   - Example: switch scene → unmute mic → start recording.
-- [ ] **`system.command`** (gated):
-  - Parameters: `{ command, detached?, timeoutMs? }`, run with `sh -c`.
-  - `detached` is for launching GUI apps: spawn with `detached: true`, `stdio: 'ignore'`, then `unref()`.
-  - On a non-zero exit, show the last lines of stderr in the toast.
-  - When the deck runs as a systemd user service, check that `WAYLAND_DISPLAY` and `DBUS_SESSION_BUS_ADDRESS` are set, or GUI apps won't start. Plasma usually exports them to the user manager.
+- [x] **`system.command`** (gated), in `server/actions/system.ts` and `server/system/command.ts`:
+  - Parameters: `{ command, detached?, timeoutMs? }`, run with `sh -c` in the home folder, without `OBS_PASSWORD` in its environment.
+  - **Gate:** `STREAMDECK_ENABLE_COMMANDS=1` (`env.commandsEnabled`). The executor refuses otherwise. `applyOp` refuses any edit whose result has a command the deck didn't have before (`refuseNewCommands`: added, changed, duplicated, imported, or inside a macro). `ServerInfo.commands` tells the editor, which then hides the action and dims existing command buttons.
+  - Waiting mode (default 30 s timeout): the command leads its own process group, so a timeout stops everything it started. The toast shows the exit code and the last lines of stderr. Programs it leaves in the background don't hold up the button.
+  - `detached` (for GUI apps): spawned with `detached: true`, `stdio: 'ignore'`, then `unref()`. It's watched for one second so "command not found" (exit 127) still gets a toast.
+  - At startup with commands on, the server warns if `WAYLAND_DISPLAY`/`DISPLAY` or `DBUS_SESSION_BUS_ADDRESS` is missing (e.g. under systemd), since GUI apps then won't open.
 - [ ] **`system.stats` tile** (display-only; a new behavior `'display'` in `actions-meta.ts`, where tapping does nothing or opens details):
   - **CPU %:** from `/proc/stat` deltas.
   - **RAM:** from `/proc/meminfo`.

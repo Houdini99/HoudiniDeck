@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { LIMITS, firstEmptySlot, slotInBounds, slotKey } from '../../shared/deck-utils.ts';
 import type { ObsState } from '../../shared/obs-types.ts';
-import { DeckSchema, type Deck, type DeckOp, type Page } from '../../shared/schema.ts';
+import { DeckSchema, type Action, type Deck, type DeckOp, type Page } from '../../shared/schema.ts';
 import { buildStarterPage } from './starter.ts';
 
 export class OpError extends Error {}
@@ -10,6 +10,8 @@ export class OpError extends Error {}
 export interface OpContext {
   obs: ObsState;
   newId: () => string;
+  /** Whether Run Command buttons may be added or changed (STREAMDECK_ENABLE_COMMANDS=1). */
+  commandsEnabled?: boolean;
 }
 
 export interface OpResult {
@@ -43,7 +45,45 @@ function checkPageLimit(deck: Deck): void {
   if (deck.pages.length >= LIMITS.maxPages) throw new OpError(`A deck can have at most ${LIMITS.maxPages} pages`);
 }
 
+/** Every Run Command action in the deck (macro steps too), as JSON. */
+function commandActions(deck: Deck): string[] {
+  const found: string[] = [];
+  const visit = (action: Action | undefined): void => {
+    if (action?.type === 'system.command') found.push(JSON.stringify(action));
+    if (action?.type === 'macro') for (const step of action.steps) if ('action' in step) visit(step.action);
+  };
+  for (const page of deck.pages) {
+    for (const button of Object.values(page.buttons)) {
+      visit(button.tap);
+      visit(button.longPress);
+    }
+  }
+  return found;
+}
+
+/**
+ * While commands are off, an edit may keep the command buttons a deck already has (e.g. move
+ * them or change their label) but not add, copy, import or change any.
+ */
+function refuseNewCommands(before: Deck, after: Deck): void {
+  const existing = new Map<string, number>();
+  for (const command of commandActions(before)) existing.set(command, (existing.get(command) ?? 0) + 1);
+  for (const command of commandActions(after)) {
+    const left = existing.get(command) ?? 0;
+    if (left === 0) {
+      throw new OpError('Run Command buttons are turned off on this server. Start it with STREAMDECK_ENABLE_COMMANDS=1 to allow them.');
+    }
+    existing.set(command, left - 1);
+  }
+}
+
 export function applyOp(current: Deck, op: DeckOp, ctx: OpContext): OpResult {
+  const result = change(current, op, ctx);
+  if (!ctx.commandsEnabled) refuseNewCommands(current, result.deck);
+  return result;
+}
+
+function change(current: Deck, op: DeckOp, ctx: OpContext): OpResult {
   const deck = structuredClone(current);
 
   switch (op.op) {

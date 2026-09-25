@@ -13,6 +13,8 @@ export interface ServerInfo {
   hostname: string;
   /** URLs other devices can use to reach the deck. */
   urls: string[];
+  /** Whether Run Command buttons work (the server was started with STREAMDECK_ENABLE_COMMANDS=1). */
+  commands: boolean;
 }
 
 export interface PairingInfo {

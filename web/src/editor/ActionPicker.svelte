@@ -1,16 +1,17 @@
 <script lang="ts">
-  import { ACTION_TYPES, CATEGORIES, actionMeta } from '$shared/actions-meta.ts';
+  import { CATEGORIES, actionMeta, availableActionTypes } from '$shared/actions-meta.ts';
   import type { ActionType } from '$shared/schema.ts';
   import Icon from '../lib/Icon.svelte';
+  import { store } from '../lib/store.svelte.ts';
   import UiIcon from '../lib/UiIcon.svelte';
 
   // First step for a new button: pick what it does from a grid of cards.
   let { onpick, onfolder }: { onpick: (type: ActionType) => void; onfolder?: () => void } = $props();
 
-  const groups = CATEGORIES.map((category) => ({
-    category,
-    types: ACTION_TYPES.filter((t) => actionMeta(t).category === category),
-  }));
+  const groups = $derived.by(() => {
+    const types = availableActionTypes(store.info?.commands ?? false);
+    return CATEGORIES.map((category) => ({ category, types: types.filter((t) => actionMeta(t).category === category) }));
+  });
 
   const iconOf = (type: ActionType) => {
     const meta = actionMeta(type);

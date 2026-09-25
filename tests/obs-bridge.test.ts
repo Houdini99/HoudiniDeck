@@ -11,7 +11,7 @@ import type { Action, Deck } from '../shared/schema.ts';
 import { tempDir, waitFor } from './helpers.ts';
 
 // OBS actions don't touch these.
-const others = { run: runProcess, media: { currentInstance: () => undefined }, audio: { refresh: async () => {} } };
+const others = { run: runProcess, media: { currentInstance: () => undefined }, audio: { refresh: async () => {} }, commandsEnabled: false };
 
 async function connected(mock: MockObs, password = '') {
   const bridge = new ObsBridge({ url: mock.url, password, log: silentLogger });

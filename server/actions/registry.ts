@@ -23,6 +23,8 @@ export interface ExecutorDeps {
   media: Pick<MediaWatcher, 'currentInstance'>;
   /** Re-reads the system volume after a change. */
   audio: Pick<AudioWatcher, 'refresh'>;
+  /** Run Command buttons work (STREAMDECK_ENABLE_COMMANDS=1). */
+  commandsEnabled: boolean;
 }
 
 export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
@@ -30,7 +32,7 @@ export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
     obs: obsExecutor(deps.bridge, deps.screenshotDir),
     http: httpExecutor(deps.log),
     media: mediaExecutor(deps.run, deps.media),
-    system: systemExecutor({ run: deps.run, audio: deps.audio }),
+    system: systemExecutor({ run: deps.run, audio: deps.audio, commandsEnabled: deps.commandsEnabled }),
     // Macro steps run through this same registry.
     macro: macroExecutor({ run: (action, phase) => runAction(registry, action, phase), log: deps.log }),
     // Navigation happens in the browser, which never sends these; a stale client's press is a no-op.

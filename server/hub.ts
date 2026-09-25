@@ -209,7 +209,7 @@ export class Hub {
   private handleOp(client: Client, reqId: number, op: DeckOp): Promise<void> {
     const run = async () => {
       const { deckStore, bridge } = this.deps;
-      const result = applyOp(deckStore.deck, op, { obs: bridge.state, newId });
+      const result = applyOp(deckStore.deck, op, { obs: bridge.state, newId, commandsEnabled: this.deps.env.commandsEnabled });
       const valid = DeckSchema.safeParse(result.deck);
       if (!valid.success) throw new OpError(`That change would make the deck invalid:\n${z.prettifyError(valid.error)}`);
       await deckStore.replace(valid.data, { backupReason: result.backup });

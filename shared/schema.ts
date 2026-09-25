@@ -105,6 +105,14 @@ const StepActionSchema = z.discriminatedUnion('type', [
     /** Percentage points per press in step mode (negative lowers the volume). */
     step: z.number().int().min(-50).max(50).optional(),
   }),
+  z.object({
+    type: z.literal('system.command'),
+    /** Run with `sh -c` in the home folder. */
+    command: z.string().trim().min(1).max(4000),
+    /** Start it and don't wait (for apps that keep running). */
+    detached: z.boolean().optional(),
+    timeoutMs: z.number().int().min(1000).max(600_000).optional(),
+  }),
 ]);
 
 export const MAX_MACRO_STEPS = 20;
