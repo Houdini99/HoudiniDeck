@@ -1,6 +1,7 @@
 // The deck's helper on Windows (helper.ps1): one long-running Windows PowerShell process for System
-// Volume, Keyboard Shortcut and Media Keys buttons, which Linux handles with wpctl, ydotool and
-// playerctl. Requests and answers are JSON lines. It starts when first needed and again after it stops.
+// Volume, Keyboard Shortcut, Type Text, Play Sound and Media Keys buttons, which Linux handles with wpctl,
+// ydotool, pw-play and playerctl. Requests and answers are JSON lines. It starts when first needed and
+// again after it stops.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createInterface } from 'node:readline';
@@ -11,8 +12,12 @@ import { errorMessage, type Logger } from '../../log.ts';
 
 export const HELPER_SCRIPT = fileURLToPath(new URL('./helper.ps1', import.meta.url));
 
-/** Compiling the helper's C# part takes a few seconds on its first start. */
-const START_TIMEOUT_MS = 30_000;
+/**
+ * Compiling the helper's C# part takes a few seconds, but much longer on a busy PC (right after login,
+ * when the deck starts with Windows) or a busy CI machine. A start that times out is killed and later
+ * begins again from scratch, so this has to be generous.
+ */
+const START_TIMEOUT_MS = 60_000;
 const TIMEOUT_MS = 10_000;
 /** After failed starts, wait this long before trying again (so a broken PowerShell isn't started every 2 s). */
 const COOLDOWN_MS = [2000, 10_000, 30_000, 60_000];
