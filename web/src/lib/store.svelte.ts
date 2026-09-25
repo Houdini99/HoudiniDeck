@@ -1,4 +1,6 @@
-// App-wide state: what the server pushed (deck, OBS state) plus this device's UI state.
+// App-wide state: what the server pushed (deck, OBS and other state) plus this device's UI state.
+import { emptyExtState, type ExtState } from '$shared/ext-types.ts';
+import type { VisualCtx } from '$shared/feedback.ts';
 import type { ObsState } from '$shared/obs-types.ts';
 import type { ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
 import type { Deck, DeckOp, Page } from '$shared/schema.ts';
@@ -22,6 +24,8 @@ class Store {
   pairing = $state<PairingReason | null>(null);
   deck = $state.raw<Deck | null>(null);
   obs = $state.raw<ObsState | null>(null);
+  /** Media players and other state from outside OBS. */
+  ext = $state.raw<ExtState>(emptyExtState());
   info = $state.raw<ServerInfo | null>(null);
   meters = $state.raw<Record<string, number>>({});
   /** Current time on the server's clock; ticks every second for output timers. */
@@ -37,6 +41,9 @@ class Store {
   pagesOpen = $state(false);
   editing = $state<{ pageId: string; slot: string } | null>(null);
   dragOverPage = $state<string | null>(null);
+
+  /** Everything a button needs to work out how it looks (only valid once deck and obs are set). */
+  visualCtx: VisualCtx = $derived({ obs: this.obs!, deck: this.deck!, ext: this.ext, now: this.now });
 
   currentPage: Page | undefined = $derived.by(() => {
     const deck = this.deck;
@@ -77,6 +84,7 @@ class Store {
         this.syncClock(msg.serverTime);
         this.deck = msg.deck;
         this.obs = msg.obs;
+        this.ext = msg.ext;
         this.info = msg.info;
         this.pairing = null;
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
@@ -88,6 +96,9 @@ class Store {
       case 'obs':
         this.syncClock(msg.serverTime);
         this.obs = msg.obs;
+        break;
+      case 'ext':
+        this.ext = msg.ext;
         break;
       case 'meters':
         this.meters = msg.levels;

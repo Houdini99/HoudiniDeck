@@ -43,10 +43,11 @@ For each action type:
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`. A field with `show` only appears (and is only required) while `show(action)` is true.
 3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
 4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts`.
-   - New state that isn't OBS (now playing, system volume, stats) needs its own slice.
-   - Add e.g. `{ t: 'ext', media, system }` to `ServerMsg` in `shared/protocol.ts`. Keep it in a store like `ObsStateStore`, broadcast it debounced from `server/hub.ts`, and hold it in `web/src/lib/store.svelte.ts`.
-   - `VisualCtx` then needs the new slice.
-5. **Tests:** put external processes behind an injectable runner (`(cmd, args) => Promise<{code, stdout, stderr}>`) so executors can be unit-tested without touching the real system.
+   - State that isn't OBS (now playing, system volume, stats) goes into `ExtState` in `shared/ext-types.ts`; add a field for the new slice.
+   - A watcher under `server/system/` (see `media.ts`) writes it into the `ExtStore` (`server/ext-store.ts`) and calls `changed()`. The hub then sends a debounced `{ t: 'ext' }` message, and the browser keeps it in `store.ext`.
+   - Buttons see it as `ctx.ext` in `actionStatus()` (`VisualCtx`) and in `autoLabel` (`LabelCtx`).
+   - Run watchers only while someone looks: the hub calls `setActive()` as browsers come and go.
+5. **Tests:** run helper programs through `server/system/process.ts`: a `Runner` (`(cmd, args) => Promise<{code, stdout, stderr}>`) for one-off commands, a `Spawner` for long-running ones read line by line. Tests pass fakes (see `tests/media.test.ts`), so nothing touches the real system.
 
 ### Security rules (keep these)
 
@@ -67,9 +68,11 @@ For each action type:
   - `user:password@` in the URL becomes a Basic `Authorization` header (fetch refuses such URLs).
   - The editor gained the `url`, `multiline` and `headers` field kinds.
   - Use cases: Home Assistant, Streamer.bot, Philips Hue.
-- [ ] **`media.player`:** `{ command: playPause|next|previous|stop, player? }` using `playerctl [-p player] play-pause`.
-  - **Feedback:** `playerctl --follow metadata --format '{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}'`, kept running while any client is connected.
-  - **Now-playing tile:** show the title, with the art as background when `artUrl` is `file://` or `https://`.
+- [x] **`media.player`:** `{ command: playPause|next|previous|stop, player?, nowPlaying? }`, in `server/actions/media.ts` and `server/system/media.ts`.
+  - **Feedback:** `playerctl --follow metadata --format '{{playerInstance}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}'`, running while any client is connected. In follow mode playerctl reports the player that changed last. Every player a button names gets its own `--player <name>` follower.
+  - **Commands:** without a named player they go to `--player <instance>` of the followed player, so the button controls what it shows. Plain `playerctl play-pause` would pick the first player it lists.
+  - **Now-playing tile** (`nowPlaying`, on by default for new buttons): the title as the label, and the art filling the button. `https://` art is used as is; `file://` art is served at `/api/media/art/<random token>` (only the current track's file, and only if it is an image). A PAUSED badge shows when paused.
+  - Checked against a fake playerctl and in unit tests. **Still to check on the PC** with real players (Spotify, Firefox): that the art shows, and which player "whichever played last" picks.
 - [ ] **`system.volume`:** `{ target: output|input, mode: toggleMute|mute|unmute|step, db? }` using `wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle` and `wpctl set-volume … 5%+`.
   - **Feedback:** poll `wpctl get-volume @DEFAULT_AUDIO_SINK@` (and `…SOURCE@`) every 2 s while clients are connected. Its output looks like `Volume: 0.45 [MUTED]`.
   - Also usable as a fader tile.

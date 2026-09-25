@@ -6,8 +6,11 @@ import { createExecutors } from '../server/actions/registry.ts';
 import { startMockObs, type MockObs } from '../server/dev/mock-obs.ts';
 import { silentLogger } from '../server/log.ts';
 import { ObsBridge } from '../server/obs/bridge.ts';
+import { runProcess } from '../server/system/process.ts';
 import type { Action, Deck } from '../shared/schema.ts';
 import { tempDir, waitFor } from './helpers.ts';
+
+const noMedia = { currentInstance: () => undefined };
 
 async function connected(mock: MockObs, password = '') {
   const bridge = new ObsBridge({ url: mock.url, password, log: silentLogger });
@@ -71,7 +74,7 @@ test('actions go to OBS and the resulting events update the mirror', async (t) =
       },
     ],
   };
-  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: '/nonexistent', log: silentLogger }), getDeck: () => deck, log: silentLogger });
+  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: '/nonexistent', log: silentLogger, run: runProcess, media: noMedia }), getDeck: () => deck, log: silentLogger });
 
   await dispatcher.press('p', 'scene', 'tap');
   await waitFor(() => bridge.state.programScene === 'BRB', 2000, 'program scene change');
@@ -179,7 +182,7 @@ test('every OBS action type reaches OBS with the right request', async (t) => {
       },
     ],
   };
-  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: tmp.dir, log: silentLogger }), getDeck: () => deck, log: silentLogger });
+  const dispatcher = new Dispatcher({ executors: createExecutors({ bridge, screenshotDir: tmp.dir, log: silentLogger, run: runProcess, media: noMedia }), getDeck: () => deck, log: silentLogger });
   const press = (id: string) => dispatcher.press('p', id, 'tap');
   const s = () => bridge.state;
 

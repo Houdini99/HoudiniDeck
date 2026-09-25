@@ -13,7 +13,7 @@
   let { page, button, interactive = true }: { page: Page; button: Button; interactive?: boolean } = $props();
 
   const behavior = $derived(button.tap ? actionBehavior(button.tap) : 'press');
-  const visual = $derived(buttonVisual(button, { obs: store.obs!, deck: store.deck!, now: store.now }));
+  const visual = $derived(buttonVisual(button, store.visualCtx));
   const showLabel = $derived(prefs.showLabels && !button.hideLabel);
 
   let pressed = $state(false);

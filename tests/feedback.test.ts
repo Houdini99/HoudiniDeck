@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COLORS, missingFields } from '../shared/actions-meta.ts';
+import { emptyExtState, type ExtState, type PlayerInfo } from '../shared/ext-types.ts';
 import { buttonVisual } from '../shared/feedback.ts';
 import { emptyObsState, type ObsState } from '../shared/obs-types.ts';
 import type { Button, Deck } from '../shared/schema.ts';
@@ -15,7 +16,7 @@ function obs(): ObsState {
   return s;
 }
 
-const visual = (button: Button, s = obs(), now = 0) => buttonVisual(button, { obs: s, deck, now });
+const visual = (button: Button, s = obs(), now = 0, ext = emptyExtState()) => buttonVisual(button, { obs: s, deck, ext, now });
 
 test('scene buttons: red ring on program, green ring on preview, found by uuid after rename', () => {
   assert.equal(visual({ id: 'a', tap: { type: 'obs.scene', scene: { name: 'Game' }, target: 'auto' } }).ring, 'program');
@@ -82,9 +83,65 @@ test('missingFields lists required fields that are still empty', () => {
 
 test('the editor can preview the normal and active look of a scene button', () => {
   const button: Button = { id: 'a', tap: { type: 'obs.scene', scene: { name: 'Game' }, target: 'auto' } };
-  const ctx = { obs: obs(), deck, now: 0 };
+  const ctx = { obs: obs(), deck, ext: emptyExtState(), now: 0 };
   assert.equal(buttonVisual(button, ctx).ring, 'program', 'live state: Game is on program');
   assert.equal(buttonVisual(button, ctx, { forceActive: false }).ring, undefined);
   const other: Button = { id: 'b', tap: { type: 'obs.scene', scene: { name: 'Chat' }, target: 'auto' } };
   assert.equal(buttonVisual(other, ctx, { forceActive: true }).ring, 'program');
+});
+
+function withPlayers(players: Record<string, PlayerInfo | null>, available = true): ExtState {
+  return { media: { available, players } };
+}
+
+const song: PlayerInfo = { instance: 'spotify', status: 'Playing', artist: 'Daft Punk', title: 'One More Time', art: 'https://i.scdn.co/image/x' };
+
+test('media keys: dim without a player, pause icon while playing, song and art when asked', () => {
+  const playPause: Button = { id: 'm', tap: { type: 'media.player', command: 'playPause' } };
+  assert.equal(visual(playPause).disabled, true, 'no player known yet');
+  assert.equal(visual(playPause, obs(), 0, withPlayers({ '': null })).disabled, true, 'no player running');
+  assert.equal(visual(playPause, obs(), 0, withPlayers({ '': song }, false)).disabled, true, 'playerctl missing');
+
+  const playing = visual(playPause, obs(), 0, withPlayers({ '': song }));
+  assert.equal(playing.active, true);
+  assert.deepEqual(playing.icon, { set: 'mdi', name: 'pause' });
+  assert.equal(playing.label, 'Play/Pause');
+  assert.equal(playing.image, undefined, 'no art unless the button asks for it');
+
+  const nowPlaying: Button = { id: 'n', tap: { type: 'media.player', command: 'playPause', nowPlaying: true } };
+  const shown = visual(nowPlaying, obs(), 0, withPlayers({ '': song }));
+  assert.equal(shown.label, 'One More Time');
+  assert.equal(shown.image, 'https://i.scdn.co/image/x');
+  assert.equal(shown.badge, undefined);
+  const paused = visual(nowPlaying, obs(), 0, withPlayers({ '': { ...song, status: 'Paused' } }));
+  assert.equal(paused.active, false);
+  assert.equal(paused.badge, 'PAUSED');
+  assert.deepEqual(visual({ ...nowPlaying, icon: { emoji: '🎵' } }, obs(), 0, withPlayers({ '': song })).image, undefined, 'a chosen icon wins');
+
+  const next = visual({ id: 'x', tap: { type: 'media.player', command: 'next' } }, obs(), 0, withPlayers({ '': song }));
+  assert.equal(next.active, false, 'only play/pause lights up');
+  assert.deepEqual(next.icon, { set: 'mdi', name: 'skip-next' });
+});
+
+test('media keys for a named player follow that player', () => {
+  const spotify: Button = { id: 's', tap: { type: 'media.player', command: 'playPause', player: 'spotify', nowPlaying: true } };
+  const firefox: PlayerInfo = { instance: 'firefox.instance_1', status: 'Paused', artist: '', title: 'A video', art: undefined };
+  const v = visual(spotify, obs(), 0, withPlayers({ '': firefox, spotify: song }));
+  assert.equal(v.active, true);
+  assert.equal(v.label, 'One More Time');
+  assert.equal(visual(spotify, obs(), 0, withPlayers({ '': firefox, spotify: null })).disabled, true);
+});
+
+test('player names can’t pass for command-line options', async () => {
+  const { ActionSchema } = await import('../shared/schema.ts');
+  const parse = (player: string) => ActionSchema.safeParse({ type: 'media.player', command: 'next', player }).success;
+  assert.equal(parse('spotify'), true);
+  assert.equal(parse('firefox.instance_12'), true);
+  assert.equal(parse('--list-all'), false);
+  assert.equal(parse('-p'), false);
+  assert.equal(parse('spotify,%any'), false);
+});
+
+test('checkboxes are never "missing"', () => {
+  assert.deepEqual(missingFields({ type: 'media.player', command: 'next' }), []);
 });

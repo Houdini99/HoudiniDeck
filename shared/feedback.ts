@@ -1,5 +1,6 @@
 // Derives how a button should look from its action and the live OBS state. Pure; runs in the browser.
 import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon } from './actions-meta.ts';
+import { followedPlayer, type ExtState } from './ext-types.ts';
 import { mulToPos } from './fader.ts';
 import { formatDuration } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from './obs-resolve.ts';
@@ -9,6 +10,7 @@ import type { Action, Button, Deck, IconRef } from './schema.ts';
 export interface VisualCtx {
   obs: ObsState;
   deck: Deck;
+  ext: ExtState;
   /** Current time on the server's clock (browser clock corrected by the measured offset). */
   now: number;
 }
@@ -26,6 +28,8 @@ export interface ActionStatus {
   missing?: boolean;
   disabled?: boolean;
   fader?: { pos: number; muted: boolean; db?: number; input: string };
+  /** A picture that fills the button (a song's cover art), shown instead of the icon. */
+  image?: string;
 }
 
 export interface ButtonVisual extends ActionStatus {
@@ -60,7 +64,7 @@ function outputStatus(out: ObsOutput, label: string, tone: Tone, now: number): A
 }
 
 export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
-  const { obs, deck, now } = ctx;
+  const { obs, deck, ext, now } = ctx;
   if (action.type.startsWith('obs.') && obs.connection !== 'connected') return { active: false, offline: true };
 
   switch (action.type) {
@@ -134,6 +138,17 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'obs.hotkey':
     case 'http.request':
       return { active: false };
+    case 'media.player': {
+      const player = ext.media.available ? followedPlayer(ext, action.player) : undefined;
+      if (!player) return { active: false, disabled: true };
+      const playing = player.status === 'Playing';
+      const status: ActionStatus = { active: action.command === 'playPause' && playing };
+      if (action.nowPlaying) {
+        status.image = player.art;
+        if (player.status === 'Paused' && player.title) Object.assign(status, { badge: 'PAUSED', tone: 'paused' });
+      }
+      return status;
+    }
     case 'deck.page':
       return { active: false, missing: !deck.pages.some((p) => p.id === action.pageId) };
     case 'deck.back':
@@ -145,6 +160,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
 export function buttonVisual(button: Button, ctx: VisualCtx, opts: { forceActive?: boolean } = {}): ButtonVisual {
   const action = button.tap ?? button.longPress;
   const status: ActionStatus = action ? actionStatus(action, ctx) : { active: false };
+  if (button.icon) status.image = undefined; // a chosen icon wins over cover art
   if (opts.forceActive !== undefined) {
     status.active = opts.forceActive;
     // For scene buttons "active" means on Program, which is drawn as a ring.

@@ -34,6 +34,7 @@
     'obs.studioMode',
     'obs.collection',
     'obs.profile',
+    'media.player',
   ]);
 
   // The editor is keyed on the slot it edits (see App.svelte), so this is fixed for its lifetime.
@@ -53,7 +54,7 @@
   let error = $state('');
 
   const page = $derived(store.deck?.pages.find((p) => p.id === target.pageId));
-  const ctx = $derived({ obs: store.obs!, deck: store.deck!, now: store.now });
+  const ctx = $derived(store.visualCtx);
   const previewVisual = $derived(buttonVisual({ ...draft, id: existing?.id ?? 'preview' } as Button, ctx, { forceActive: previewActive }));
   const autoLabel = $derived(draft.tap ? actionAutoLabel(draft.tap, ctx) : '');
   const defaultIcon = $derived(draft.tap ? actionIcon(draft.tap) : undefined);

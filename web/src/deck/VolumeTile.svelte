@@ -13,7 +13,7 @@
 
   let { page, button, interactive = true }: { page: Page; button: Button; interactive?: boolean } = $props();
 
-  const visual = $derived(buttonVisual(button, { obs: store.obs!, deck: store.deck!, now: store.now }));
+  const visual = $derived(buttonVisual(button, store.visualCtx));
   const fader = $derived(visual.fader);
   /** Position under the finger while dragging, so the fill follows instantly. */
   let dragPos = $state<number | null>(null);

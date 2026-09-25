@@ -8,7 +8,9 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Mute, push-to-talk/push-to-mute, and volume faders with live meters.
   - Stream, record (pause, split, chapters), replay buffer and virtual camera.
   - Transitions, screenshots, scene collections and profiles, OBS hotkeys, and media sources.
-- **Beyond OBS:** webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
+- **Beyond OBS:**
+  - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
+  - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
 - **A real deck:**
   - Any grid size, several pages, and folders.
   - Drag-and-drop editing.
@@ -23,6 +25,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 
 - Node.js 24.2 or newer. Node runs the TypeScript server directly, so there's no build step for the server.
 - OBS Studio 28 or newer, which has obs-websocket 5 built in.
+- Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`).
 
 ## Quick start
 
@@ -143,7 +146,8 @@ npm run typecheck   # tsc + svelte-check
 ```
 shared/   types, zod schemas and logic used by both sides
           (actions-meta.ts = action catalog, feedback.ts = how buttons look)
-server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storage, mock OBS
+server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storage, mock OBS,
+          action executors (actions/) and helpers for other programs such as playerctl (system/)
 web/      Svelte 5 app (deck, editor, settings)
 tests/    node:test suites
 deploy/   systemd user unit
@@ -154,9 +158,9 @@ deploy/   systemd user unit
 1. **Schema:** add it to `ActionSchema` in `shared/schema.ts`.
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts` (label, category, icon, form fields, behavior).
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
-4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`.
+4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, media keys, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: shell commands, system volume, macros, stats tile, hotkeys, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
@@ -165,6 +169,7 @@ The editor, validation and multi-device sync pick it up automatically. What's pl
   - If `my-pc.local` doesn't resolve on that phone, use the IP address instead.
 - **"OBS rejected the password":** copy the password again from *Show Connect Info* in OBS into Settings.
 - **"Can't reach OBS":** OBS isn't running, or its WebSocket server is off (Tools → WebSocket Server Settings).
+- **Media keys are dimmed:** no media player is running, or `playerctl` isn't installed. Run `playerctl -l` in a terminal: it should list your players.
 - **The tablet's screen turns off:**
   - Keep-awake needs one tap after the page loads.
   - Over plain `http://`, browsers only allow a workaround, so also consider raising the tablet's auto-lock time.

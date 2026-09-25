@@ -5,7 +5,10 @@
 
   let { visual, showLabel = true }: { visual: ButtonVisual; showLabel?: boolean } = $props();
 
-  const bleed = $derived(!!visual.icon && 'upload' in visual.icon);
+  // Cover art fills the button; if it can't be loaded, the icon shows instead.
+  let failedImage = $state('');
+  const image = $derived(visual.image && visual.image !== failedImage ? visual.image : undefined);
+  const bleed = $derived(!!image || (!!visual.icon && 'upload' in visual.icon));
   const labelShown = $derived(showLabel && !!visual.label);
 </script>
 
@@ -22,7 +25,11 @@
 >
   <!-- Sizes below use cqi, which resolve against .face (a size container) only inside it. -->
   <div class="inner">
-    {#if visual.icon}
+    {#if image}
+      <div class="icon-wrap">
+        <img class="art" src={image} alt="" draggable="false" onerror={() => (failedImage = image)} />
+      </div>
+    {:else if visual.icon}
       <div class="icon-wrap" class:with-label={labelShown}><Icon icon={visual.icon} cover={bleed} /></div>
     {/if}
     {#if labelShown}
@@ -99,6 +106,14 @@
     width: 100%;
     height: 100%;
     margin: 0;
+  }
+  .art {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+    -webkit-user-drag: none;
   }
   .bleed .label {
     position: absolute;

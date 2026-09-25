@@ -21,6 +21,8 @@
   const values = $derived(action as unknown as Record<string, unknown>);
   const online = $derived(store.obs?.connection === 'connected');
 
+  // Lists fetched once when a field needs them. A failed fetch leaves the list empty (a text box)
+  // rather than retrying, which would loop while the server is unreachable.
   let hotkeys = $state<string[] | null>(null);
   $effect(() => {
     if (hotkeys !== null || !online || !meta.fields.some((f) => f.kind === 'hotkey')) return;
@@ -28,7 +30,17 @@
     store
       .request<{ hotkeys: string[] }>({ t: 'query', q: 'hotkeys' })
       .then((r) => (hotkeys = r.hotkeys))
-      .catch(() => (hotkeys = null));
+      .catch(() => {});
+  });
+
+  let players = $state<string[] | null>(null);
+  $effect(() => {
+    if (players !== null || !meta.fields.some((f) => f.kind === 'mediaPlayer')) return;
+    players = [];
+    store
+      .request<{ players: string[] }>({ t: 'query', q: 'mediaPlayers' })
+      .then((r) => (players = r.players))
+      .catch(() => {});
   });
 
   const refOption = (name: string, uuid?: string, suffix = ''): Option => ({ value: name, label: name + suffix, uuid });
@@ -38,6 +50,7 @@
     const obs = store.obs;
     const deck = store.deck;
     if (field.kind === 'page') return (deck?.pages ?? []).map((p) => ({ value: p.id, label: p.name }));
+    if (field.kind === 'mediaPlayer') return (players ?? []).map((p) => ({ value: p, label: p }));
     if (!obs) return [];
     const inputs = Object.values(obs.inputs);
     const scenes = obs.scenes.map((s) => refOption(s.name, s.uuid));
@@ -127,6 +140,11 @@
       <HeadersField value={values[field.key] as Record<string, string> | undefined} onchange={(v) => setRaw(field, v)} />
       {#if field.hint}<small class="hint">{field.hint}</small>{/if}
     </div>
+  {:else if field.kind === 'checkbox'}
+    <label class="toggle">
+      <span>{field.label}{#if field.hint}<small>{field.hint}</small>{/if}</span>
+      <input type="checkbox" checked={!!values[field.key]} onchange={(e) => setRaw(field, e.currentTarget.checked || undefined)} />
+    </label>
   {:else}
     <label class="field">
       {@render title(field)}
@@ -170,12 +188,12 @@
       {:else}
         <select {value} onchange={(e) => setValue(field, e.currentTarget.value, opts)}>
           {#if field.optional}
-            <option value="">(none)</option>
+            <option value="">{field.emptyLabel ?? '(none)'}</option>
           {:else if !value}
             <option value="" disabled>Choose…</option>
           {/if}
           {#if value && !opts.some((o) => o.value === value)}
-            <option {value}>{value} (not found)</option>
+            <option {value}>{value} ({field.kind === 'mediaPlayer' ? 'not running' : 'not found'})</option>
           {/if}
           {#each opts as o (o.value)}
             <option value={o.value}>{o.label}</option>

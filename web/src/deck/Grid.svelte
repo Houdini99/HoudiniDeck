@@ -167,7 +167,7 @@
     style:width="{drag.w}px"
     style:height="{drag.h}px"
   >
-    <ButtonFace visual={buttonVisual(drag.button, { obs: store.obs!, deck: store.deck!, now: store.now })} />
+    <ButtonFace visual={buttonVisual(drag.button, store.visualCtx)} />
   </div>
 {/if}
 

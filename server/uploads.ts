@@ -10,14 +10,14 @@ import { writeFileAtomic } from './store/files.ts';
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-const MIME = {
+export const IMAGE_MIME = {
   png: 'image/png',
   jpg: 'image/jpeg',
   webp: 'image/webp',
   gif: 'image/gif',
   svg: 'image/svg+xml',
 } as const;
-type Ext = keyof typeof MIME;
+type Ext = keyof typeof IMAGE_MIME;
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -70,7 +70,7 @@ export function registerUploadRoutes(app: FastifyInstance, deps: { dataDir: stri
     }
     const ext = file.slice(file.lastIndexOf('.') + 1) as Ext;
     return reply
-      .type(MIME[ext])
+      .type(IMAGE_MIME[ext])
       .header('x-content-type-options', 'nosniff')
       // An uploaded SVG opened directly must not be able to run script on this origin.
       .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")

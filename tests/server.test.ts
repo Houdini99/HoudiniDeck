@@ -53,6 +53,7 @@ test('a browser on the PC itself needs no key', async () => {
   const init = await c.next('init');
   assert.equal(init.obs.connection, 'connected');
   assert.equal(init.deck.pages.length, 1);
+  assert.equal(typeof init.ext.media.available, 'boolean', 'state from outside OBS comes along');
   c.ws.close();
 });
 

@@ -1,5 +1,6 @@
 // Everything the editor and the button renderer need to know about each action type.
 // Adding an action type = schema entry (schema.ts) + meta entry (here) + executor (server).
+import { followedPlayer, type ExtState } from './ext-types.ts';
 import { prettyHotkey } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
 import type { ObsState } from './obs-types.ts';
@@ -20,7 +21,7 @@ export const COLORS = {
 
 export type Behavior = 'press' | 'hold' | 'fader' | 'nav';
 
-export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Integrations', 'Navigation'] as const;
+export const CATEGORIES = ['Scenes & Sources', 'Audio', 'Outputs', 'Studio Mode', 'More OBS', 'Media', 'Integrations', 'Navigation'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type FieldKind =
@@ -38,6 +39,8 @@ export type FieldKind =
   | 'url'
   | 'multiline'
   | 'headers'
+  | 'checkbox'
+  | 'mediaPlayer'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -69,12 +72,15 @@ export interface FieldDef<T extends ActionType = ActionType> {
   max?: number;
   step?: number;
   placeholder?: string;
+  /** Label of the empty choice in an optional select (default "(none)"). */
+  emptyLabel?: string;
   hint?: string;
 }
 
 export interface LabelCtx {
   obs?: ObsState;
   deck?: Deck;
+  ext?: ExtState;
 }
 
 type Spec<T extends ActionType, V> = V | ((a: ActionOf<T>) => V);
@@ -126,6 +132,13 @@ const MEDIA_LABELS: Record<ActionOf<'obs.media'>['action'], string> = {
 
 const inputName = (ref: { name: string; uuid?: string }, obs?: ObsState) =>
   (obs && resolveInput(obs, ref)?.name) || ref.name;
+
+const PLAYER_COMMANDS: Record<ActionOf<'media.player'>['command'], { label: string; icon: string }> = {
+  playPause: { label: 'Play/Pause', icon: 'play' },
+  next: { label: 'Next Track', icon: 'skip-next' },
+  previous: { label: 'Previous Track', icon: 'skip-previous' },
+  stop: { label: 'Stop', icon: 'stop' },
+};
 
 function urlHost(url: string): string {
   try {
@@ -423,6 +436,33 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'obs.profile', name: '' }),
     autoLabel: (a) => a.name || 'Profile',
   },
+  'media.player': {
+    type: 'media.player',
+    label: 'Media Keys',
+    description: 'Play, pause or skip music and videos playing on the PC (Spotify, browsers, VLC, …).',
+    category: 'Media',
+    icon: (a) => mdi(PLAYER_COMMANDS[a.command].icon),
+    activeIcon: (a) => mdi(a.command === 'playPause' ? 'pause' : PLAYER_COMMANDS[a.command].icon),
+    fields: [
+      {
+        key: 'command',
+        label: 'Command',
+        kind: 'select',
+        options: Object.entries(PLAYER_COMMANDS).map(([value, c]) => ({ value, label: c.label })),
+      },
+      {
+        key: 'player',
+        label: 'Player',
+        kind: 'mediaPlayer',
+        optional: true,
+        emptyLabel: 'Whichever played last',
+        placeholder: 'e.g. spotify (empty: whichever played last)',
+      },
+      { key: 'nowPlaying', label: 'Show the song and cover art', kind: 'checkbox' },
+    ],
+    create: () => ({ type: 'media.player', command: 'playPause', nowPlaying: true }),
+    autoLabel: (a, { ext }) => (a.nowPlaying && ext && followedPlayer(ext, a.player)?.title) || PLAYER_COMMANDS[a.command].label,
+  },
   'http.request': {
     type: 'http.request',
     label: 'Webhook',
@@ -536,6 +576,7 @@ export function missingFields(action: Action): string[] {
       const v = values[f.key];
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;
       if (f.kind === 'number') return typeof v !== 'number' || Number.isNaN(v);
+      if (f.kind === 'checkbox') return false;
       return typeof v !== 'string' || v === '';
     })
     .map((f) => f.label);

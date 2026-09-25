@@ -84,6 +84,18 @@ export const ActionSchema = z.discriminatedUnion('type', [
     body: z.string().max(20_000).optional(),
     timeoutMs: z.number().int().min(500).max(60_000).optional(),
   }),
+  z.object({
+    type: z.literal('media.player'),
+    command: z.enum(['playPause', 'next', 'previous', 'stop']).default('playPause'),
+    /** playerctl player name (e.g. "spotify"); empty = whichever player was active last. */
+    player: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/, 'Player names are letters, digits, dots, - and _ (e.g. spotify)')
+      .optional(),
+    /** Show the song's title and cover art on the button. */
+    nowPlaying: z.boolean().optional(),
+  }),
   // Navigation actions never reach the server's executors; the browser handles them.
   z.object({ type: z.literal('deck.page'), pageId: Id }),
   z.object({ type: z.literal('deck.back') }),
@@ -203,7 +215,7 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hold'), pageId: Id, buttonId: Id, down: z.boolean() }),
   z.object({ t: z.literal('fader'), pageId: Id, buttonId: Id, pos: z.number().min(0).max(1) }),
   z.object({ t: z.literal('op'), reqId: ReqId, op: DeckOpSchema }),
-  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys']) }),
+  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers']) }),
   z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),

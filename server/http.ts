@@ -10,12 +10,14 @@ import { registerIconRoutes } from './icons.ts';
 import type { Logger } from './log.ts';
 import type { ObsBridge } from './obs/bridge.ts';
 import type { SettingsStore } from './store/settings-store.ts';
+import { registerMediaRoutes, type MediaWatcher } from './system/media.ts';
 import { MAX_UPLOAD_BYTES, registerUploadRoutes } from './uploads.ts';
 
 export interface HttpDeps {
   env: Env;
   hub: Hub;
   bridge: ObsBridge;
+  media: MediaWatcher;
   settingsStore: SettingsStore;
   log: Logger;
 }
@@ -23,7 +25,7 @@ export interface HttpDeps {
 const API_PREFIXES = ['/api/', '/icons/', '/uploads/', '/ws'];
 
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
-  const { env, hub, bridge, settingsStore, log } = deps;
+  const { env, hub, bridge, media, settingsStore, log } = deps;
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
 
   app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
@@ -39,6 +41,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   hub.register(app);
   registerIconRoutes(app);
   registerUploadRoutes(app, { dataDir: env.dataDir, settingsStore });
+  registerMediaRoutes(app, media);
   app.get('/api/health', async () => ({ ok: true, obs: bridge.state.connection, clients: hub.connectedCount }));
 
   if (existsSync(join(env.webDist, 'index.html'))) {

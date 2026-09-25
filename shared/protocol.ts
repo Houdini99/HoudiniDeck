@@ -1,5 +1,6 @@
 // WebSocket protocol between the browser and the server.
 // Client → server messages are defined (and validated) by ClientMsgSchema in schema.ts.
+import type { ExtState } from './ext-types.ts';
 import type { ObsState } from './obs-types.ts';
 import type { ClientMsg, Deck, DeckOp } from './schema.ts';
 
@@ -31,9 +32,10 @@ export type ToastLevel = 'info' | 'error';
 export type ServerMsg =
   | { t: 'hello'; protocol: number; needsAuth: boolean }
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }
-  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; obs: ObsState; info: ServerInfo }
+  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; obs: ObsState; ext: ExtState; info: ServerInfo }
   | { t: 'deck'; deck: Deck }
   | { t: 'obs'; obs: ObsState; serverTime: number }
+  | { t: 'ext'; ext: ExtState }
   | { t: 'meters'; levels: Record<string, number> }
   | { t: 'result'; reqId: number; ok: true; data?: unknown }
   | { t: 'result'; reqId: number; ok: false; error: string }
