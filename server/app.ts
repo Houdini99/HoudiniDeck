@@ -18,6 +18,7 @@ import { SettingsStore } from './store/settings-store.ts';
 import { AudioWatcher } from './system/audio.ts';
 import { MediaWatcher } from './system/media.ts';
 import { runProcess, spawnLines } from './system/process.ts';
+import { StatsWatcher } from './system/stats.ts';
 
 export interface App {
   http: FastifyInstance;
@@ -26,6 +27,7 @@ export interface App {
   ext: ExtStore;
   media: MediaWatcher;
   audio: AudioWatcher;
+  stats: StatsWatcher;
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   /** Port actually bound (useful when env.port is 0). */
@@ -53,6 +55,7 @@ export async function startApp(env: Env): Promise<App> {
   const ext = new ExtStore();
   const media = new MediaWatcher({ store: ext, spawn: spawnLines, run: runProcess, log: createLogger('media') });
   const audio = new AudioWatcher({ store: ext, run: runProcess, log: createLogger('audio') });
+  const stats = new StatsWatcher({ store: ext, run: runProcess, log: createLogger('stats') });
   for (const watcher of [media, audio]) {
     watcher.setDeck(deckStore.deck);
     deckStore.on('change', (deck) => watcher.setDeck(deck));
@@ -80,6 +83,7 @@ export async function startApp(env: Env): Promise<App> {
     ext,
     media,
     audio,
+    stats,
     dispatcher,
     buildId: await readBuildId(env.webDist),
     info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort), commands: env.commandsEnabled }),
@@ -98,6 +102,7 @@ export async function startApp(env: Env): Promise<App> {
     ext,
     media,
     audio,
+    stats,
     deckStore,
     settingsStore,
     port,
@@ -105,6 +110,7 @@ export async function startApp(env: Env): Promise<App> {
       hub.close();
       media.stop();
       audio.stop();
+      stats.stop();
       await bridge.stop();
       await http.close();
     },

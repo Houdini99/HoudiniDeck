@@ -1,5 +1,5 @@
 // App-wide state: what the server pushed (deck, OBS and other state) plus this device's UI state.
-import { emptyExtState, type ExtState } from '$shared/ext-types.ts';
+import { emptyExtState, type ExtState, type StatMetric } from '$shared/ext-types.ts';
 import type { VisualCtx } from '$shared/feedback.ts';
 import type { ObsState } from '$shared/obs-types.ts';
 import type { ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
@@ -17,6 +17,40 @@ export interface Toast {
 }
 
 let toastId = 0;
+
+/** Reference-counted interest in data the server only sends while something on screen needs it. */
+class Interest<K> {
+  private readonly refs = new Map<K, number>();
+  private timer?: ReturnType<typeof setTimeout>;
+  private readonly send: (keys: K[]) => void;
+
+  constructor(send: (keys: K[]) => void) {
+    this.send = send;
+  }
+
+  /** Returns the matching unsubscribe. */
+  add(key: K): () => void {
+    this.refs.set(key, (this.refs.get(key) ?? 0) + 1);
+    this.schedule();
+    return () => {
+      const n = (this.refs.get(key) ?? 1) - 1;
+      if (n <= 0) this.refs.delete(key);
+      else this.refs.set(key, n);
+      this.schedule();
+    };
+  }
+
+  /** Send the current set now (e.g. after reconnecting). */
+  flush(): void {
+    clearTimeout(this.timer);
+    this.send([...this.refs.keys()]);
+  }
+
+  private schedule(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), 50);
+  }
+}
 
 class Store {
   conn = $state<'connecting' | 'open' | 'closed'>('connecting');
@@ -55,8 +89,8 @@ class Store {
   private readonly socket = new DeckSocket(getKey);
   private clockOffset = 0;
   private buildId: string | null = null;
-  private meterRefs = new Map<string, number>();
-  private meterTimer?: ReturnType<typeof setTimeout>;
+  private readonly meterInterest = new Interest<string>((inputs) => this.socket.send({ t: 'meters', inputs }));
+  private readonly statInterest = new Interest<StatMetric>((metrics) => this.socket.send({ t: 'stats', metrics }));
   private tick?: ReturnType<typeof setInterval>;
 
   start(): void {
@@ -88,7 +122,8 @@ class Store {
         this.info = msg.info;
         this.pairing = null;
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
-        this.flushMeters();
+        this.meterInterest.flush();
+        this.statInterest.flush();
         break;
       case 'deck':
         this.deck = msg.deck;
@@ -153,26 +188,14 @@ class Store {
     this.socket.reconnect();
   }
 
-  // ---- meters: faders on screen subscribe to their input's level ---------------------------
+  // ---- what's on screen: faders subscribe to their input's level, stats tiles to their metric ----
 
   subscribeMeter(input: string): () => void {
-    this.meterRefs.set(input, (this.meterRefs.get(input) ?? 0) + 1);
-    this.scheduleMeters();
-    return () => {
-      const n = (this.meterRefs.get(input) ?? 1) - 1;
-      if (n <= 0) this.meterRefs.delete(input);
-      else this.meterRefs.set(input, n);
-      this.scheduleMeters();
-    };
+    return this.meterInterest.add(input);
   }
 
-  private scheduleMeters(): void {
-    clearTimeout(this.meterTimer);
-    this.meterTimer = setTimeout(() => this.flushMeters(), 50);
-  }
-
-  private flushMeters(): void {
-    this.socket.send({ t: 'meters', inputs: [...this.meterRefs.keys()] });
+  subscribeStat(metric: StatMetric): () => void {
+    return this.statInterest.add(metric);
   }
 
   // ---- navigation (per device) ---------------------------------------------------------------

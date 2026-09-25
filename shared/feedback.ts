@@ -1,6 +1,6 @@
 // Derives how a button should look from its action and the live OBS state. Pure; runs in the browser.
 import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon } from './actions-meta.ts';
-import { followedPlayer, type ExtState } from './ext-types.ts';
+import { followedPlayer, type ExtState, type StatMetric, type StatsState } from './ext-types.ts';
 import { mulToPos } from './fader.ts';
 import { formatDb, formatDuration } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from './obs-resolve.ts';
@@ -33,6 +33,8 @@ export interface ActionStatus {
   fader?: { pos: number; muted: boolean; text: string; input?: string; mic?: boolean };
   /** A picture that fills the button (a song's cover art), shown instead of the icon. */
   image?: string;
+  /** Stats tiles: a big value instead of the icon, and a bar filled to `level` (0..1) when there is a reading. */
+  gauge?: { text: string; detail?: string; level?: number; tone?: 'warm' | 'hot' };
 }
 
 export interface ButtonVisual extends ActionStatus {
@@ -63,6 +65,38 @@ function outputStatus(out: ObsOutput, label: string, tone: Tone, now: number): A
     }
     default:
       return { active: false };
+  }
+}
+
+const GB = 1024 ** 3;
+
+function gauge(value: number, max: number, text: string, warm: number, hot: number, detail?: string): ActionStatus {
+  const tone = value >= hot ? 'hot' : value >= warm ? 'warm' : undefined;
+  return { active: false, gauge: { text, detail, level: Math.min(1, Math.max(0, value / max)), tone } };
+}
+
+function statsStatus(metric: StatMetric, stats: StatsState): ActionStatus {
+  const reading = metric === 'gpuTemp' || metric === 'gpuMemory' ? stats.gpu : stats[metric];
+  if (reading === undefined) return { active: false, gauge: { text: '–' } }; // not read yet
+  if (reading === null) return { active: false, disabled: true, gauge: { text: 'n/a' } };
+  const { cpu, memory, cpuTemp, gpu } = stats;
+  switch (metric) {
+    case 'cpu':
+      return gauge(cpu!, 100, `${Math.round(cpu!)}%`, 75, 90);
+    case 'memory': {
+      const percent = (memory!.used / memory!.total) * 100;
+      return gauge(percent, 100, `${Math.round(percent)}%`, 80, 92, `${(memory!.used / GB).toFixed(1)} GB`);
+    }
+    case 'cpuTemp':
+      return gauge(cpuTemp!, 100, `${Math.round(cpuTemp!)}°C`, 70, 85);
+    case 'gpu':
+      return gauge(gpu!.util, 100, `${Math.round(gpu!.util)}%`, 75, 90);
+    case 'gpuTemp':
+      return gauge(gpu!.temp, 100, `${Math.round(gpu!.temp)}°C`, 70, 83);
+    case 'gpuMemory': {
+      const percent = (gpu!.memUsed / gpu!.memTotal) * 100;
+      return gauge(percent, 100, `${Math.round(percent)}%`, 80, 92, `${(gpu!.memUsed / 1024).toFixed(1)} GB`);
+    }
   }
 }
 
@@ -144,6 +178,8 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
       return { active: false };
     case 'system.command':
       return { active: false, disabled: !ctx.commands };
+    case 'system.stats':
+      return statsStatus(action.metric, ext.stats);
     case 'system.volume': {
       const device = ext.audio.available ? ext.audio[action.target] : null;
       if (device === null) return { active: false, disabled: true };

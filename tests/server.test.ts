@@ -286,3 +286,18 @@ test('Run Command buttons are refused unless the server allows commands', async 
   assert.match(res.ok ? '' : res.error, /STREAMDECK_ENABLE_COMMANDS=1/);
   c.ws.close();
 });
+
+test('stats tiles on screen get live CPU and memory readings', async () => {
+  const c = connect(`localhost:${app.port}`);
+  await c.next('init');
+  c.ws.send(JSON.stringify({ t: 'stats', metrics: ['cpu', 'memory'] }));
+  const msg = await waitFor(
+    () => c.messages.findLast((m): m is Extract<ServerMsg, { t: 'ext' }> => m.t === 'ext' && typeof m.ext.stats.cpu === 'number'),
+    4000,
+    'a CPU reading',
+  );
+  assert.ok(msg.ext.stats.cpu! >= 0 && msg.ext.stats.cpu! <= 100);
+  assert.ok(msg.ext.stats.memory!.used > 0 && msg.ext.stats.memory!.used < msg.ext.stats.memory!.total);
+  c.ws.close();
+  await waitFor(() => Object.keys(app.ext.state.stats).length === 0, 3000, 'readings stop when no one looks');
+});

@@ -21,6 +21,8 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
         return setVolume(action, phase, deps);
       case 'system.command':
         return runCommandAction(action, deps.commandsEnabled);
+      case 'system.stats':
+        return; // a display: tapping it does nothing
       default:
         throw new Error(`No executor for ${(action satisfies never as { type: string }).type}`);
     }

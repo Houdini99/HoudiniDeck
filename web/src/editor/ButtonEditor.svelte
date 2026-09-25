@@ -68,6 +68,12 @@
   const stateful = $derived(!!draft.tap && STATEFUL.has(draft.tap.type));
   const ownsGesture = $derived(!!draft.tap && ['hold', 'fader'].includes(actionBehavior(draft.tap)));
 
+  // The preview of a new stats tile needs its numbers too.
+  $effect(() => {
+    const tap = draft.tap;
+    if (tap?.type === 'system.stats') return store.subscribeStat(tap.metric);
+  });
+
   // Close if the page disappears underneath us (deleted on another device).
   $effect(() => {
     if (store.deck && !page) close();

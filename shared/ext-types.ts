@@ -1,4 +1,4 @@
-// State from outside OBS (media players, system volume; later stats) that the server pushes to
+// State from outside OBS (media players, system volume, system stats) that the server pushes to
 // every browser, next to the OBS mirror. Types and pure helpers only: the browser imports this.
 
 export type PlayerStatus = 'Playing' | 'Paused' | 'Stopped';
@@ -39,13 +39,29 @@ export interface AudioState {
   input?: AudioDevice | null;
 }
 
+export const STAT_METRICS = ['cpu', 'memory', 'cpuTemp', 'gpu', 'gpuTemp', 'gpuMemory'] as const;
+export type StatMetric = (typeof STAT_METRICS)[number];
+
+/** Readings for the stats tiles on screen. Missing until read; null when this PC can't provide it. */
+export interface StatsState {
+  /** Percent of CPU time busy since the previous reading. */
+  cpu?: number | null;
+  /** In bytes. */
+  memory?: { used: number; total: number } | null;
+  /** °C, from the CPU's temperature sensor (k10temp or coretemp). */
+  cpuTemp?: number | null;
+  /** NVIDIA GPU via nvidia-smi: load in percent, °C, memory in MiB. */
+  gpu?: { util: number; temp: number; memUsed: number; memTotal: number } | null;
+}
+
 export interface ExtState {
   media: MediaState;
   audio: AudioState;
+  stats: StatsState;
 }
 
 export function emptyExtState(): ExtState {
-  return { media: { available: true, players: {} }, audio: { available: true } };
+  return { media: { available: true, players: {} }, audio: { available: true }, stats: {} };
 }
 
 /** The player a media button refers to (its `player` field, or '' for whichever is active). */

@@ -91,12 +91,14 @@ For each action type:
   - Waiting mode (default 30 s timeout): the command leads its own process group, so a timeout stops everything it started. The toast shows the exit code and the last lines of stderr. Programs it leaves in the background don't hold up the button.
   - `detached` (for GUI apps): spawned with `detached: true`, `stdio: 'ignore'`, then `unref()`. It's watched for one second so "command not found" (exit 127) still gets a toast.
   - At startup with commands on, the server warns if `WAYLAND_DISPLAY`/`DISPLAY` or `DBUS_SESSION_BUS_ADDRESS` is missing (e.g. under systemd), since GUI apps then won't open.
-- [ ] **`system.stats` tile** (display-only; a new behavior `'display'` in `actions-meta.ts`, where tapping does nothing or opens details):
-  - **CPU %:** from `/proc/stat` deltas.
-  - **RAM:** from `/proc/meminfo`.
-  - **CPU temp:** the k10temp `temp1_input` (Tctl).
-  - **GPU %, temperature and VRAM:** `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used --format=csv,noheader,nounits`.
-  - Poll every 2 s, only while a stats tile is on some client's screen (reuse the pattern from `meters.subscribe`).
+- [x] **`system.stats` tile** `{ metric: cpu|memory|cpuTemp|gpu|gpuTemp|gpuMemory }`, in `server/system/stats.ts`. It is display-only: a new behavior `'display'`, where tapping does nothing but a long press can still have an action.
+  - **CPU %:** from `/proc/stat` deltas (the second reading comes 0.5 s after the first).
+  - **RAM:** `MemTotal − MemAvailable` from `/proc/meminfo`.
+  - **CPU temp:** `temp1_input` of the hwmon whose `name` is `k10temp` (then `zenpower`, `coretemp`). It's found by name, and looked up again if the read fails.
+  - **GPU %, temperature and VRAM:** one `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv,noheader,nounits` call per poll, only when a GPU tile is shown. Without nvidia-smi the tiles say n/a.
+  - Polled every 2 s, only for the metrics on some client's screen: tiles subscribe with `{ t: 'stats', metrics }`, the same pattern as the level meters (`Interest` in the web store).
+  - The tile shows a big value with a small bar under it, amber when warm and red when hot (e.g. CPU ≥ 70/85 °C).
+  - **Still to check on the PC:** the k10temp reading, and nvidia-smi's output on the NVIDIA GPU.
 - [ ] **`system.hotkey` via ydotool:** `{ keys: ['KEY_LEFTCTRL', 'KEY_M'] }` → `ydotool key 29:1 50:1 50:0 29:0`.
   - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`).
   - `/dev/uinput` is already writable for the user via ACL.

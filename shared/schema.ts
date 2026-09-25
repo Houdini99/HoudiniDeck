@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { actionBehavior } from './actions-meta.ts';
 import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
+import { STAT_METRICS } from './ext-types.ts';
 
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'Invalid id');
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colors must look like #rrggbb');
@@ -105,6 +106,7 @@ const StepActionSchema = z.discriminatedUnion('type', [
     /** Percentage points per press in step mode (negative lowers the volume). */
     step: z.number().int().min(-50).max(50).optional(),
   }),
+  z.object({ type: z.literal('system.stats'), metric: z.enum(STAT_METRICS).default('cpu') }),
   z.object({
     type: z.literal('system.command'),
     /** Run with `sh -c` in the home folder. */
@@ -263,6 +265,8 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
+  /** The stats tiles this browser shows (polled only while someone looks at them). */
+  z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),
 ]);
 
 export type ObsRef = z.infer<typeof ObsRefSchema>;

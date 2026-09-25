@@ -1,6 +1,6 @@
 // Everything the editor and the button renderer need to know about each action type.
 // Adding an action type = schema entry (schema.ts) + meta entry (here) + executor (server).
-import { followedPlayer, type ExtState } from './ext-types.ts';
+import { followedPlayer, type ExtState, type StatMetric } from './ext-types.ts';
 import { prettyHotkey } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
 import type { ObsState } from './obs-types.ts';
@@ -19,7 +19,8 @@ export const COLORS = {
   slate: '#3b4256',
 } as const;
 
-export type Behavior = 'press' | 'hold' | 'fader' | 'nav';
+/** display: shows something (e.g. CPU load); tapping does nothing. */
+export type Behavior = 'press' | 'hold' | 'fader' | 'nav' | 'display';
 
 export const CATEGORIES = [
   'Scenes & Sources',
@@ -155,6 +156,15 @@ const PLAYER_COMMANDS: Record<ActionOf<'media.player'>['command'], { label: stri
 };
 
 const VOLUME_TARGETS = { output: 'Speakers', input: 'Mic' } as const;
+
+export const STATS: Record<StatMetric, { label: string; option: string; icon: string }> = {
+  cpu: { label: 'CPU', option: 'CPU load', icon: 'cpu-64-bit' },
+  memory: { label: 'RAM', option: 'Memory (RAM) in use', icon: 'memory' },
+  cpuTemp: { label: 'CPU temp', option: 'CPU temperature', icon: 'thermometer' },
+  gpu: { label: 'GPU', option: 'GPU load (NVIDIA)', icon: 'expansion-card' },
+  gpuTemp: { label: 'GPU temp', option: 'GPU temperature (NVIDIA)', icon: 'thermometer' },
+  gpuMemory: { label: 'VRAM', option: 'GPU memory in use (NVIDIA)', icon: 'expansion-card-variant' },
+};
 
 function volumeIcon(a: ActionOf<'system.volume'>, muted: boolean): IconRef {
   if (a.mode === 'step') return mdi((a.step ?? 5) >= 0 ? 'volume-plus' : 'volume-minus');
@@ -534,6 +544,24 @@ export const ACTION_META: MetaTable = {
       const step = a.step ?? 5;
       return `${name} ${step >= 0 ? '+' : ''}${step}%`;
     },
+  },
+  'system.stats': {
+    type: 'system.stats',
+    label: 'System Stats',
+    description: 'Show the PC’s CPU or GPU load, temperature or memory use, updated every 2 seconds. Tapping it does nothing.',
+    category: 'System',
+    icon: (a) => mdi(STATS[a.metric].icon),
+    behavior: 'display',
+    fields: [
+      {
+        key: 'metric',
+        label: 'Show',
+        kind: 'select',
+        options: Object.entries(STATS).map(([value, s]) => ({ value, label: s.option })),
+      },
+    ],
+    create: () => ({ type: 'system.stats', metric: 'cpu' }),
+    autoLabel: (a) => STATS[a.metric].label,
   },
   'system.command': {
     type: 'system.command',

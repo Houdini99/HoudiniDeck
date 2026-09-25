@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import QRCode from 'qrcode';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
+import type { StatMetric } from '../shared/ext-types.ts';
 import { CLOSE, PROTOCOL_VERSION, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
 import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
@@ -19,6 +20,7 @@ import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
 import type { AudioWatcher } from './system/audio.ts';
 import type { MediaWatcher } from './system/media.ts';
+import type { StatsWatcher } from './system/stats.ts';
 
 const AUTH_TIMEOUT_MS = 10_000;
 const PING_INTERVAL_MS = 15_000;
@@ -32,6 +34,8 @@ interface Client {
   trustedLocal: boolean;
   alive: boolean;
   meters: Set<string>;
+  /** Stats tiles on this client's screen. */
+  stats: Set<StatMetric>;
   authTimer?: NodeJS.Timeout;
 }
 
@@ -43,6 +47,7 @@ export interface HubDeps {
   ext: ExtStore;
   media: MediaWatcher;
   audio: AudioWatcher;
+  stats: StatsWatcher;
   dispatcher: Dispatcher;
   buildId: string;
   info: () => ServerInfo;
@@ -96,6 +101,7 @@ export class Hub {
       trustedLocal: isTrustedLocal(remoteAddress, host),
       alive: true,
       meters: new Set(),
+      stats: new Set(),
     };
     this.clients.set(client.id, client);
     ws.on('pong', () => (client.alive = true));
@@ -181,6 +187,10 @@ export class Hub {
         return this.reply(client, msg.reqId, () => this.setObs(client, msg.url, msg.password));
       case 'meters':
         client.meters = new Set(msg.inputs);
+        this.updateInterest();
+        return;
+      case 'stats':
+        client.stats = new Set(msg.metrics);
         this.updateInterest();
         return;
     }
@@ -320,13 +330,14 @@ export class Hub {
     }
   }
 
-  /** Background work (OBS polling, meters, media players, volume) only runs while someone is connected. */
+  /** Background work (OBS polling, meters, media players, volume, stats) only runs while someone looks. */
   private updateInterest(): void {
     const authed = [...this.clients.values()].filter((c) => c.authed);
     this.deps.bridge.setClientCount(authed.length);
     this.deps.bridge.setMetersWanted(authed.some((c) => c.meters.size > 0));
     this.deps.media.setActive(authed.length > 0);
     this.deps.audio.setActive(authed.length > 0);
+    this.deps.stats.setWanted(authed.flatMap((c) => [...c.stats]));
   }
 
   private onClose(client: Client): void {
