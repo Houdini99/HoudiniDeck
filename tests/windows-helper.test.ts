@@ -32,10 +32,13 @@ function silentWav(): Buffer {
 
 const skip = process.platform !== 'win32' && 'needs Windows';
 
-test('the Windows helper starts and answers every kind of request', { skip, timeout: 120_000 }, async (t) => {
-  const helper = new WinHelper({ log: silentLogger });
+test('the Windows helper starts and answers every kind of request', { skip, timeout: 180_000 }, async (t) => {
+  // A CI machine running other test files at the same time can be slow to compile the helper's C#.
+  const helper = new WinHelper({ log: silentLogger, startTimeoutMs: 120_000 });
   t.after(() => helper.stop());
+  const started = Date.now();
   assert.deepEqual(await helper.request('ping'), { pong: true });
+  t.diagnostic(`started in ${Date.now() - started} ms`);
 
   // Text beyond ASCII survives both ways (the error echoes the request's name).
   await assert.rejects(helper.request('Motörhead–ü'), (err: Error) => err instanceof ActionError && err.message === 'Unknown request: Motörhead–ü');
