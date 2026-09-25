@@ -1,0 +1,22 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'vsd-test-'));
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/** Poll until fn returns something truthy (or throw after timeoutMs). */
+export async function waitFor<T>(fn: () => T | undefined | null | false, timeoutMs = 3000, label = 'condition'): Promise<T> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const value = fn();
+    if (value) return value;
+    if (Date.now() > until) throw new Error(`Timed out waiting for ${label}`);
+    await new Promise((r) => setTimeout(r, 15));
+  }
+}
+
+let counter = 0;
+export const seqId = () => `id${++counter}`;

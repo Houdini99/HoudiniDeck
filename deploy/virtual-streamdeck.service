@@ -1,0 +1,16 @@
+# systemd user unit: starts the deck when you log in. See README → "Start it automatically on login".
+[Unit]
+Description=Virtual Stream Deck (browser-based Stream Deck for OBS)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/HoudiniDeck
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --env-file-if-exists=.env server/index.ts
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

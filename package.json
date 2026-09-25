@@ -1,0 +1,43 @@
+{
+  "name": "virtual-streamdeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, browser-based Stream Deck for OBS. Control OBS from any device on your LAN.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.2"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"PORT=3325 STREAMDECK_PUBLIC_PORT=5173 node --env-file-if-exists=.env --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
+    "dev:mock": "concurrently -k -n mock,server,web -c yellow,blue,magenta \"node --watch server/dev/mock-obs.ts\" \"PORT=3325 STREAMDECK_PUBLIC_PORT=5173 STREAMDECK_DATA_DIR=.data-mock OBS_URL=ws://127.0.0.1:4456 OBS_PASSWORD= node --watch server/index.ts\" \"vite --config web/vite.config.ts\"",
+    "mock-obs": "node server/dev/mock-obs.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.ts",
+    "test": "LOG_LEVEL=error node --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json && svelte-check --workspace web --tsconfig ./tsconfig.json --threshold warning"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.4",
+    "@fastify/websocket": "^11.3.1",
+    "@iconify-json/mdi": "^1.2.3",
+    "@iconify-json/simple-icons": "^1.2.97",
+    "fastify": "^5.12.5",
+    "obs-websocket-js": "^5.0.8",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^26.6.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.5",
+    "nosleep.js": "^0.12.0",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.1",
+    "ws": "^8.21.3"
+  }
+}
