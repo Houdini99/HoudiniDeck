@@ -12,6 +12,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
   - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
   - Live system stats tiles: CPU load and temperature, memory, and NVIDIA GPU load, temperature and memory.
+  - Keyboard shortcuts sent to the PC, optionally held while you hold the button (push-to-talk).
 - **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
 - **Run Command (off by default):** a button starts a program or script on the PC. See [Security](#security).
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
@@ -30,6 +31,15 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 - Node.js 24.2 or newer. Node runs the TypeScript server directly, so there's no build step for the server.
 - OBS Studio 28 or newer, which has obs-websocket 5 built in.
 - Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
+- Optional: `ydotool`, for keyboard shortcuts. It types through the kernel, so it works on Wayland:
+
+  ```bash
+  sudo pacman -S ydotool
+  pacman -Ql ydotool | grep service           # shows where its service unit is
+  systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
+  ```
+
+  The ydotool service needs write access to `/dev/uinput`.
 
 ## Quick start
 
@@ -171,7 +181,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: keyboard shortcuts, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: KDE global shortcuts without ydotool, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
@@ -181,6 +191,7 @@ The editor, validation and multi-device sync pick it up automatically. What's pl
 - **"OBS rejected the password":** copy the password again from *Show Connect Info* in OBS into Settings.
 - **"Can't reach OBS":** OBS isn't running, or its WebSocket server is off (Tools → WebSocket Server Settings).
 - **Media keys are dimmed:** no media player is running, or `playerctl` isn't installed. Run `playerctl -l` in a terminal: it should list your players.
+- **Keyboard shortcuts do nothing:** the toast says whether `ydotool` is missing or its service isn't running. `ydotool key 29:1 29:0` in a terminal (taps Ctrl) should run without an error.
 - **System volume buttons are dimmed:** `wpctl get-volume @DEFAULT_AUDIO_SINK@` should print the volume. If the deck runs as a systemd service, it needs to run as your user (it does with the included user unit).
 - **The tablet's screen turns off:**
   - Keep-awake needs one tap after the page loads.

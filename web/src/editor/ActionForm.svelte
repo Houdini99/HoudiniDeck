@@ -6,6 +6,7 @@
   import type { Action, MacroStep, ObsRef } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
   import HeadersField from './HeadersField.svelte';
+  import KeysField from './KeysField.svelte';
   import MacroSteps from './MacroSteps.svelte';
 
   // Fields are generated from the action's metadata; OBS pickers read the live mirror.
@@ -145,6 +146,12 @@
     <div class="field">
       {@render title(field)}
       <MacroSteps bind:steps={() => values[field.key] as MacroStep[], (v) => setRaw(field, v)} />
+    </div>
+  {:else if field.kind === 'keys'}
+    <div class="field">
+      {@render title(field)}
+      <KeysField bind:keys={() => (values[field.key] as string[] | undefined) ?? [], (v) => setRaw(field, v)} />
+      {#if field.hint}<small class="hint">{field.hint}</small>{/if}
     </div>
   {:else if field.kind === 'checkbox'}
     <label class="toggle">

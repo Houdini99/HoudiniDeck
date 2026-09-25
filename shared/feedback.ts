@@ -175,6 +175,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'obs.hotkey':
     case 'http.request':
     case 'macro':
+    case 'system.hotkey':
       return { active: false };
     case 'system.command':
       return { active: false, disabled: !ctx.commands };

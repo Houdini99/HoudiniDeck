@@ -99,11 +99,14 @@ For each action type:
   - Polled every 2 s, only for the metrics on some client's screen: tiles subscribe with `{ t: 'stats', metrics }`, the same pattern as the level meters (`Interest` in the web store).
   - The tile shows a big value with a small bar under it, amber when warm and red when hot (e.g. CPU ≥ 70/85 °C).
   - **Still to check on the PC:** the k10temp reading, and nvidia-smi's output on the NVIDIA GPU.
-- [ ] **`system.hotkey` via ydotool:** `{ keys: ['KEY_LEFTCTRL', 'KEY_M'] }` → `ydotool key 29:1 50:1 50:0 29:0`.
-  - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`).
-  - `/dev/uinput` is already writable for the user via ACL.
-  - **Editor:** a key recorder that maps `KeyboardEvent.code` to Linux evdev key codes (small lookup table), plus manual entry.
-  - **Alternative that needs no setup:** a `kde.shortcut` action calling `qdbus6 org.kde.kglobalaccel /component/<component> invokeShortcut <name>`.
+- [x] **`system.hotkey` via ydotool:** `{ keys: ['KEY_LEFTCTRL', 'KEY_M'], hold? }` → `ydotool key 29:1 50:1 50:0 29:0`.
+  - `shared/keys.ts` holds 125 keys with their evdev codes, checked against `linux/input-event-codes.h`, plus labels and `KeyboardEvent.code` names.
+  - `hold`: the keys go down on press and up on release (behavior `'hold'`), so a disconnecting device releases them too. E.g. push-to-talk.
+  - Errors checked against ydotool 1.0.4's source. It reports a missing daemon on **stdout** ("failed to connect socket …", exit code 2); the toast then gives the `systemctl --user enable --now ydotool` command.
+  - **Editor:** `KeysField.svelte` has Ctrl/Shift/Alt/Super toggles plus a grouped key list (works on touch screens), and a recorder for a physical keyboard. Keys are positions on a US layout (Y/Z swap on German keyboards); recording gets that right.
+  - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`). `/dev/uinput` is already writable for the user via ACL.
+  - **Still to check on the PC** after that setup.
+- [ ] **`kde.shortcut`** (alternative that needs no setup): call `qdbus6 org.kde.kglobalaccel /component/<component> invokeShortcut <name>`. A picker could list components and shortcut names via kglobalaccel's D-Bus API.
 - [ ] **`discord.voice`:** `{ mode: toggleMute|toggleDeafen }` through Discord's local RPC.
   - **Setup (the user does it):**
     1. Create an application at discord.com/developers.

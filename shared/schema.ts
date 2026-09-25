@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { actionBehavior } from './actions-meta.ts';
 import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
 import { STAT_METRICS } from './ext-types.ts';
+import { KEY_NAMES } from './keys.ts';
 
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'Invalid id');
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colors must look like #rrggbb');
@@ -107,6 +108,13 @@ const StepActionSchema = z.discriminatedUnion('type', [
     step: z.number().int().min(-50).max(50).optional(),
   }),
   z.object({ type: z.literal('system.stats'), metric: z.enum(STAT_METRICS).default('cpu') }),
+  z.object({
+    type: z.literal('system.hotkey'),
+    /** Linux key names, pressed in this order and released in reverse (e.g. KEY_LEFTCTRL, KEY_M). */
+    keys: z.array(z.enum(KEY_NAMES)).min(1, 'Choose at least one key').max(8),
+    /** Keep the keys down while the button is held (e.g. push-to-talk). */
+    hold: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal('system.command'),
     /** Run with `sh -c` in the home folder. */

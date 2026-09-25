@@ -2,6 +2,7 @@
 // Adding an action type = schema entry (schema.ts) + meta entry (here) + executor (server).
 import { followedPlayer, type ExtState, type StatMetric } from './ext-types.ts';
 import { prettyHotkey } from './format.ts';
+import { shortcutLabel } from './keys.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
 import type { ObsState } from './obs-types.ts';
 import type { Action, ActionOf, ActionType, Deck, IconRef } from './schema.ts';
@@ -54,6 +55,7 @@ export type FieldKind =
   | 'checkbox'
   | 'mediaPlayer'
   | 'macroSteps'
+  | 'keys'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -563,6 +565,25 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'system.stats', metric: 'cpu' }),
     autoLabel: (a) => STATS[a.metric].label,
   },
+  'system.hotkey': {
+    type: 'system.hotkey',
+    label: 'Keyboard Shortcut',
+    description: 'Press keys on the PC, e.g. an app’s shortcut (uses ydotool). Can hold them while you hold the button.',
+    category: 'System',
+    icon: mdi('keyboard-outline'),
+    behavior: (a) => (a.hold ? 'hold' : 'press'),
+    fields: [
+      {
+        key: 'keys',
+        label: 'Keys',
+        kind: 'keys',
+        hint: 'Keys go by their position on a US keyboard (on a German one, Y and Z swap). Recording on your keyboard gets it right.',
+      },
+      { key: 'hold', label: 'Hold the keys while the button is held', kind: 'checkbox', hint: 'For push-to-talk and the like.' },
+    ],
+    create: () => ({ type: 'system.hotkey', keys: [] }),
+    autoLabel: (a) => shortcutLabel(a.keys) || 'Shortcut',
+  },
   'system.command': {
     type: 'system.command',
     label: 'Run Command',
@@ -737,7 +758,7 @@ export function missingFields(action: Action): string[] {
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;
       if (f.kind === 'number') return typeof v !== 'number' || Number.isNaN(v);
       if (f.kind === 'checkbox') return false;
-      if (f.kind === 'macroSteps') return !Array.isArray(v) || v.length === 0;
+      if (f.kind === 'macroSteps' || f.kind === 'keys') return !Array.isArray(v) || v.length === 0;
       return typeof v !== 'string' || v === '';
     })
     .map((f) => f.label);

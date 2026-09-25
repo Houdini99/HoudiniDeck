@@ -2,6 +2,7 @@
 // shell commands (only when the server was started with STREAMDECK_ENABLE_COMMANDS=1).
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
+import { ydotoolKeyArgs } from '../../shared/keys.ts';
 import { DEFAULT_COMMAND_TIMEOUT_MS, launchCommand, outputTail, runCommand } from '../system/command.ts';
 import type { RunResult, Runner } from '../system/process.ts';
 import { ActionError, type Executor, type Phase } from './executor.ts';
@@ -23,6 +24,8 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
         return runCommandAction(action, deps.commandsEnabled);
       case 'system.stats':
         return; // a display: tapping it does nothing
+      case 'system.hotkey':
+        return pressKeys(action, phase, deps.run);
       default:
         throw new Error(`No executor for ${(action satisfies never as { type: string }).type}`);
     }
@@ -45,6 +48,24 @@ export function volumeArgs(action: ActionOf<'system.volume'>, phase: Phase): str
     default:
       return ['set-mute', id, 'toggle']; // toggleMute, and a tap on a fader
   }
+}
+
+/** Keys via ydotool; hold buttons press on down and release on up. */
+async function pressKeys(action: ActionOf<'system.hotkey'>, phase: Phase, run: Runner): Promise<void> {
+  const args = phase.kind === 'hold' ? ydotoolKeyArgs(action.keys, phase.down ? 'down' : 'up') : ydotoolKeyArgs(action.keys);
+  let res: RunResult;
+  try {
+    res = await run('ydotool', ['key', ...args]);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new ActionError('ydotool is not installed on the PC (see the README)');
+    throw err;
+  }
+  if (res.code === 0) return;
+  const output = `${res.stdout}\n${res.stderr}`; // ydotool reports connection problems on stdout
+  if (/failed to connect socket/.test(output)) {
+    throw new ActionError('ydotool’s background service isn’t running. Start it with: systemctl --user enable --now ydotool');
+  }
+  throw new ActionError(`ydotool: ${outputTail(output, 2) || `exit code ${res.code}`}`);
 }
 
 async function runCommandAction(action: ActionOf<'system.command'>, enabled: boolean): Promise<void> {
