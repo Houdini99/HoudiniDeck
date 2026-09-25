@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import { startApp } from './app.ts';
 import { readEnv } from './env.ts';
 import { createLogger, errorMessage } from './log.ts';
-import { pairingUrl, reachableUrls } from './network.ts';
+import { deckRunningOn, openInBrowser, pairingUrl, reachableUrls } from './network.ts';
 
 const env = readEnv();
 const log = createLogger('server');
@@ -54,6 +54,12 @@ async function main(): Promise<void> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EADDRINUSE') {
+      // Started from a shortcut while it already runs (e.g. since login): just show that one.
+      if (env.openBrowser && (await deckRunningOn(env.port))) {
+        log.info(`The deck is already running; opening http://localhost:${env.publicPort}`);
+        openInBrowser(`http://localhost:${env.publicPort}`);
+        process.exit(0);
+      }
       log.error(`Port ${env.port} is already in use. Is another copy running? Set PORT to use a different one.`);
       process.exit(1);
     }
@@ -70,6 +76,7 @@ async function main(): Promise<void> {
   await printBanner(app.settingsStore.settings.accessKey, app.settingsStore.obsConfig(env).url);
   log.info(`Data directory: ${env.dataDir}`);
   checkCommandEnvironment();
+  if (env.openBrowser) openInBrowser(`http://localhost:${env.publicPort}`);
 
   let stopping = false;
   const shutdown = async (signal: string) => {

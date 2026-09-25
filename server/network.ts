@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 
 // Container/VM bridges aren't reachable from phones on the LAN. Linux names, then Windows' adapter
@@ -37,4 +38,22 @@ export function reachableUrls(port: number): string[] {
 export function pairingUrl(port: number, key: string): string {
   const host = lanAddresses()[0] ?? 'localhost';
   return `http://${host}:${port}/#k=${key}`;
+}
+
+/** Open a URL in the default browser, without waiting for it. */
+export function openInBrowser(url: string): void {
+  const [cmd, args] = process.platform === 'win32' ? ['explorer.exe', [url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true })
+    .on('error', () => {}) // no browser to open: the address is printed anyway
+    .unref();
+}
+
+/** Whether a deck (this program) answers on the port, e.g. a copy started at login. */
+export async function deckRunningOn(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
+    return res.ok && ((await res.json()) as { ok?: unknown }).ok === true;
+  } catch {
+    return false;
+  }
 }

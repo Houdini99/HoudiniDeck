@@ -64,7 +64,20 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 
    The ydotool service needs write access to `/dev/uinput`.
 
-### On Windows 10/11
+### On Windows 10/11 with the installer (easiest)
+
+Download `HoudiniDeck-Setup-<version>.exe` from the [Releases page](https://github.com/Houdini99/HoudiniDeck/releases) and run it. It brings its own Node.js, so there's nothing else to install.
+
+- **"Windows protected your PC":** the installer isn't code-signed, so SmartScreen warns about it. Click **More info → Run anyway**.
+- **Options while installing:** let phones and tablets connect (a Windows Firewall rule, private networks only), start HoudiniDeck when you log in, and a desktop icon.
+- **Start it** from the Start menu (**HoudiniDeck**); it opens in your browser. The terminal window that comes with it is the deck itself: closing it stops the deck. Starting it again while it runs just opens the browser.
+- **Your deck, settings and images** live in `%LOCALAPPDATA%\HoudiniDeck` (Start menu → **HoudiniDeck data folder**). Settings such as `PORT` or `STREAMDECK_ENABLE_COMMANDS=1` go into a `.env` file there (see [Configuration](#configuration)).
+- **Update:** run the newer installer. It stops the deck and keeps your deck and settings.
+- **Uninstall:** Settings → Apps → Installed apps → **HoudiniDeck** → Uninstall. It removes the program, its shortcuts and its firewall rule, and asks whether to delete your deck and settings too.
+
+### On Windows 10/11 from the source code
+
+For development, or to run the newest code from GitHub.
 
 1. Install Node.js and git. In PowerShell (or the Command Prompt):
 
@@ -94,7 +107,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 3. The first time the deck starts, Windows asks whether Node.js may use the network: allow it for **private networks** (see "Open the deck on a phone or tablet" below).
 4. Nothing else to install. Media keys, system volume and keyboard shortcuts use Windows PowerShell, which every Windows has; the GPU tiles use `nvidia-smi`, which comes with the NVIDIA driver.
 
-### Updating
+### Updating (from the source code)
 
 In the deck's folder, stop it (Ctrl+C), then:
 
@@ -109,7 +122,7 @@ Open tablets reload by themselves.
 
 ## Quick start
 
-Once `npm start` runs, open <http://localhost:3325> on the PC. The terminal prints the addresses for your other devices and a QR code for pairing them.
+Once the deck runs (`npm start`, or **HoudiniDeck** from the Windows Start menu), open <http://localhost:3325> on the PC. The terminal prints the addresses for your other devices and a QR code for pairing them.
 
 ### 1. Turn on OBS's WebSocket server
 
@@ -131,7 +144,7 @@ Phones and tablets need an access key (see [Security](#security)).
      ```
 
      To use the deck over your WireGuard tunnel too, add the same rule for `10.8.0.0/24`.
-   - **Windows:** the first time the deck starts, Windows asks whether Node.js may use the network: allow it for **private networks**. Your home network must be set to private (Settings → Network & internet → your Wi-Fi or Ethernet → Network profile type: **Private**). If you missed the question, run this in PowerShell as administrator:
+   - **Windows:** with the installer's firewall option, this is done. Otherwise, the first time the deck starts, Windows asks whether Node.js may use the network: allow it for **private networks**. Your home network must be set to private (Settings → Network & internet → your Wi-Fi or Ethernet → Network profile type: **Private**). If you missed the question, run this in PowerShell as administrator:
 
      ```powershell
      New-NetFirewallRule -DisplayName 'Virtual Stream Deck' -Direction Inbound -Protocol TCP -LocalPort 3325 -Action Allow -Profile Private
@@ -159,16 +172,16 @@ Everything can be set from the UI. These environment variables, optionally in a 
 | `HOST` | `0.0.0.0` | Interface to bind (`127.0.0.1` = this PC only) |
 | `OBS_URL` | `ws://127.0.0.1:4455` | obs-websocket address |
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL`/`OBS_PASSWORD` are set, Settings can't change the connection |
-| `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored |
+| `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored (the Windows installer's version: `%LOCALAPPDATA%\HoudiniDeck`, fixed) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `STREAMDECK_ENABLE_COMMANDS` | – | `1` allows Run Command buttons. Only this variable can turn them on, never the web UI |
 
-The easiest place for them is the `.env` file, on Linux and Windows alike. To set one for a single run instead: `PORT=4000 npm start` in bash, `$env:PORT=4000; npm start` in PowerShell.
+The easiest place for them is the `.env` file, on Linux and Windows alike: in the project folder, or for the Windows installer's version in its data folder (Start menu → **HoudiniDeck data folder**; restart the deck afterwards). To set one for a single run instead: `PORT=4000 npm start` in bash, `$env:PORT=4000; npm start` in PowerShell.
 
 ### Data and backups
 
 ```
-data/
+data/              (the Windows installer's version: %LOCALAPPDATA%\HoudiniDeck)
   deck.json        pages and buttons
   settings.json    OBS connection + access key (file mode 0600)
   uploads/         button images
@@ -179,7 +192,9 @@ data/
 
 ### Start it automatically on login (optional)
 
-**Windows:** `deploy\windows\virtual-streamdeck.cmd` starts the deck like `npm start` does. Run `npm run build` once, then:
+**Windows with the installer:** tick "Start HoudiniDeck when I log in" while installing (run the installer again to change it).
+
+**Windows from the source code:** `deploy\windows\virtual-streamdeck.cmd` starts the deck like `npm start` does. Run `npm run build` once, then:
 
 1. Press Win+R, type `shell:startup` and press Enter. The Startup folder opens.
 2. Right-click `deploy\windows\virtual-streamdeck.cmd` in the project folder → **Show more options → Send to → Desktop (create shortcut)**, and move that shortcut into the Startup folder.
@@ -249,8 +264,8 @@ server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storag
           on Windows, one PowerShell helper does their jobs (system/windows/)
 web/      Svelte 5 app (deck, editor, settings)
 tests/    node:test suites
-deploy/   systemd user unit, and a start script for Windows
-.github/  CI: tests and a start-up check on Linux and Windows
+deploy/   systemd user unit; for Windows a start script and the installer (windows/installer/)
+.github/  CI: tests and a start-up check on Linux and Windows; building and trying the Windows installer
 ```
 
 ### Adding a new kind of button action

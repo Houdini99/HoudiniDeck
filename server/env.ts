@@ -18,6 +18,8 @@ export interface Env {
   obsPassword?: string;
   /** Allow buttons that run shell commands. Only the environment can turn this on, never the UI. */
   commandsEnabled: boolean;
+  /** Open the deck in the browser once it runs (the Windows Start menu shortcut sets this). */
+  openBrowser: boolean;
   production: boolean;
 }
 
@@ -37,6 +39,7 @@ export function readEnv(e: NodeJS.ProcessEnv = process.env): Env {
     obsUrl: e.OBS_URL || undefined,
     obsPassword: e.OBS_PASSWORD,
     commandsEnabled: e.STREAMDECK_ENABLE_COMMANDS === '1',
+    openBrowser: e.STREAMDECK_OPEN_BROWSER === '1',
     production: e.NODE_ENV === 'production',
   };
 }

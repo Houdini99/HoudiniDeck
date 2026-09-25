@@ -39,7 +39,7 @@ npm run build && npm start   # production on :3325
 - **The built-in browser pane is usually hidden,** so screenshots lag behind and CSS transitions freeze. Verify state with `read_page`, `find` or JS evaluation, and click by element `ref` when possible.
 - **Simulating OBS quitting:** the mock (`npm run dev:mock`) prints its PID. `kill -USR2 <pid>` or `curl http://127.0.0.1:4457/toggle` (also on Windows) toggles OBS off and on. Don't use `SIGUSR1`: Node reserves it for the debugger.
 - **Helper programs** (playerctl, wpctl, ydotool, busctl, nvidia-smi) run through `server/system/process.ts`, never a shell, and tests pass fakes. To click through their buttons in `dev:mock` without the real programs, put small fake scripts first in `PATH`.
-- **Windows can't be tried here.** CI (`.github/workflows/ci.yml`) runs the tests, the real PowerShell helper and `.github/smoke.mjs` (starts `npm start` and `npm run dev:mock`) on a Windows runner; check it after pushing. Tests with shell commands need both an `sh` and a `cmd.exe` version (see `tests/command.test.ts`).
+- **Windows can't be tried here.** CI (`.github/workflows/ci.yml`) runs the tests, the real PowerShell helper and `.github/smoke.mjs` (starts `npm start` and `npm run dev:mock`) on a Windows runner; check it after pushing. `.github/workflows/windows-installer.yml` builds the installer (`deploy/windows/installer/`) and installs, runs, updates and uninstalls it there. Keep the installer files ASCII. Tests with shell commands need both an `sh` and a `cmd.exe` version (see `tests/command.test.ts`).
 - **The PC's own browser skips pairing.** To test pairing, open the LAN IP (`http://192.168.1.20:5173`). The mock data directory is `.data-mock/`.
 
 ## Working agreements

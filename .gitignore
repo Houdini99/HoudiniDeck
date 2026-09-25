@@ -5,3 +5,6 @@ data/
 .env
 *.log
 .claude
+
+# Windows installer builds (deploy/windows/installer/build.ps1)
+dist-installer/

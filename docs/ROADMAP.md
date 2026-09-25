@@ -35,6 +35,7 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **Stats:** CPU, RAM, and the NVIDIA tiles; CPU temperature says n/a.
   - `settings.json`: `icacls data\settings.json` lists only the user.
   - Autostart through `deploy\windows\virtual-streamdeck.cmd` in the Startup folder.
+  - **The installer** (from the Windows installer workflow's artifact or a release): the SmartScreen warning, the options, that the Start menu entry opens the browser (and only the browser when the deck already runs), no firewall question with the firewall option, autostart, an update over a running deck, and uninstalling with and without deleting the data.
 
 ## Windows support (2026‑09‑25)
 
@@ -47,6 +48,7 @@ Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program,
 - **Which code runs:** `app.ts` creates the helper on `win32`; `AudioWatcher` and `systemExecutor` take it as `windows`, and `WindowsMediaWatcher` replaces `MediaWatcher` (both implement `MediaSource`). The helper only starts for decks with Media Keys buttons (while someone looks), System Volume buttons, or Keyboard Shortcut buttons (started early, so the first press doesn't wait for PowerShell).
 - **Elsewhere:** Run Command uses `cmd.exe /d /s /c` and `taskkill /t` (`system/command.ts`); stats use `os.cpus()`/`os.freemem()` instead of `/proc`, and CPU temperature is n/a; `settings.json` gets an owner-only ACL through `icacls`; `network.ts` skips `vEthernet (…)` and other virtual adapters.
 - **Platform-only actions:** `ACTION_META[type].platforms` (e.g. `['linux']` for `kde.shortcut`). `ServerInfo.platform` tells the browser: the editor doesn't offer such actions, and existing buttons are dimmed. Their executor refuses too.
+- **Installer:** `deploy/windows/installer/` (Inno Setup 6). `build.ps1` stages the server, the built UI, the run-time packages and the `node.exe` that runs the script, then compiles `installer.iss` into `dist-installer/HoudiniDeck-Setup-<version>.exe`. The program goes to Program Files, the data to `%LOCALAPPDATA%\HoudiniDeck` (`HoudiniDeck.cmd` sets `STREAMDECK_DATA_DIR` and runs from there, so `.env` lives there too). Options: a firewall rule for its `node.exe` on private networks, autostart, desktop icon. Updates and the uninstaller stop a running deck first (`stop-deck.ps1`); the uninstaller asks before deleting the data (`/PURGEDATA` skips the question). `.github/workflows/windows-installer.yml` builds it, and `.github/test-installer.ps1` installs, runs, updates and uninstalls it on the Windows runner; a `v*` tag matching `package.json`'s version publishes a release. `STREAMDECK_OPEN_BROWSER=1` (the Start menu entry) opens the deck in the browser, or only the browser when a deck already answers on the port.
 - **Tests:** `tests/windows.test.ts` covers the Windows code on any system (fake helper, a stand-in helper process in `tests/fake-win-helper.ts`); `tests/windows-helper.test.ts` runs the real helper and only runs on Windows.
 
 ## Phase 3: actions beyond OBS
