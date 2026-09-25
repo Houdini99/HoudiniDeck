@@ -22,7 +22,7 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **Media keys** with Spotify and Firefox: the cover art, the PAUSED badge, and which player "whichever played last" controls.
   - **System volume:** mute and fader with the real `wpctl` (WirePlumber 0.5), and that `--limit` is accepted.
   - **Stats tiles:** the k10temp temperature, and GPU numbers from `nvidia-smi`.
-  - **Keyboard shortcuts:** after the user installs ydotool and enables its service (README → Requirements).
+  - **Keyboard shortcuts:** after the user installs ydotool and enables its service (README → Install).
   - **KDE shortcuts:** the list in the editor, and pressing e.g. KWin → Overview.
   - **Run Command:** only if the user wants it. Start the deck with `STREAMDECK_ENABLE_COMMANDS=1`; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
 

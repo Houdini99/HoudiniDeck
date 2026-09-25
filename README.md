@@ -29,37 +29,87 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
 
 ## Requirements
 
+- Linux or Windows 10/11, on the PC that runs OBS.
 - Node.js 24.2 or newer. Node runs the TypeScript server directly, so there's no build step for the server.
 - OBS Studio 28 or newer, which has obs-websocket 5 built in.
 
+## Install
+
 ### On Linux
 
-- Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
-- Optional: `ydotool`, for keyboard shortcuts. It types through the kernel, so it works on Wayland:
+1. Install Node.js and git (CachyOS/Arch; on other distributions use their package manager, or get Node.js 24 from nodejs.org):
 
-  ```bash
-  sudo pacman -S ydotool
-  pacman -Ql ydotool | grep service           # shows where its service unit is
-  systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
-  ```
+   ```bash
+   sudo pacman -S nodejs npm git
+   ```
 
-  The ydotool service needs write access to `/dev/uinput`.
+2. Get the deck, build its web UI and start it:
+
+   ```bash
+   git clone https://github.com/Houdini99/HoudiniDeck.git
+   cd HoudiniDeck
+   npm install
+   npm run build
+   npm start
+   ```
+
+3. Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
+4. Optional: `ydotool`, for keyboard shortcuts. It types through the kernel, so it works on Wayland:
+
+   ```bash
+   sudo pacman -S ydotool
+   pacman -Ql ydotool | grep service           # shows where its service unit is
+   systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
+   ```
+
+   The ydotool service needs write access to `/dev/uinput`.
 
 ### On Windows 10/11
 
-- Node.js: `winget install OpenJS.NodeJS.LTS` in a terminal (or the installer from nodejs.org). Open a new terminal afterwards so `node` and `npm` are found.
-- Nothing else. Media keys, system volume and keyboard shortcuts use Windows PowerShell, which every Windows has; the GPU tiles use `nvidia-smi`, which comes with the NVIDIA driver.
-- The commands in this README work in PowerShell and in the Command Prompt.
+1. Install Node.js and git. In PowerShell (or the Command Prompt):
 
-## Quick start
+   ```powershell
+   winget install OpenJS.NodeJS.LTS
+   winget install Git.Git
+   ```
+
+   Then **close the terminal and open a new one**, so it finds `node`, `npm` and `git`. (Without winget: the installers from nodejs.org and git-scm.com. Without git: on GitHub, **Code → Download ZIP**, unpack it, and open a terminal in that folder.)
+2. Get the deck, build its web UI and start it:
+
+   ```powershell
+   git clone https://github.com/Houdini99/HoudiniDeck.git
+   cd HoudiniDeck
+   npm install
+   npm run build
+   npm start
+   ```
+
+   If PowerShell says *"npm.ps1 cannot be loaded because running scripts is disabled on this system"*, allow scripts for your account once, then run the command again:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+   (Or use the Command Prompt, `cmd`, which doesn't have this restriction.)
+3. The first time the deck starts, Windows asks whether Node.js may use the network: allow it for **private networks** (see "Open the deck on a phone or tablet" below).
+4. Nothing else to install. Media keys, system volume and keyboard shortcuts use Windows PowerShell, which every Windows has; the GPU tiles use `nvidia-smi`, which comes with the NVIDIA driver.
+
+### Updating
+
+In the deck's folder, stop it (Ctrl+C), then:
 
 ```bash
+git pull
 npm install
 npm run build
 npm start
 ```
 
-Open <http://localhost:3325> on the PC. The terminal prints the addresses for your other devices and a QR code for pairing them.
+Open tablets reload by themselves.
+
+## Quick start
+
+Once `npm start` runs, open <http://localhost:3325> on the PC. The terminal prints the addresses for your other devices and a QR code for pairing them.
 
 ### 1. Turn on OBS's WebSocket server
 
