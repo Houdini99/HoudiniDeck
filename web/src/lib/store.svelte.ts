@@ -2,7 +2,7 @@
 import { emptyExtState, type ExtState, type StatMetric } from '$shared/ext-types.ts';
 import type { VisualCtx } from '$shared/feedback.ts';
 import type { ObsState } from '$shared/obs-types.ts';
-import type { ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
+import type { HistoryInfo, ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
 import type { Deck, DeckOp, Page } from '$shared/schema.ts';
 import { clearKey, getKey, setKey } from './key.ts';
 import { prefs } from './prefs.svelte.ts';
@@ -57,11 +57,15 @@ class Store {
   /** Set while this device has to be paired before it can connect. */
   pairing = $state<PairingReason | null>(null);
   deck = $state.raw<Deck | null>(null);
+  /** What Undo/Redo would take back or bring back. */
+  history = $state.raw<HistoryInfo>({});
   obs = $state.raw<ObsState | null>(null);
   /** Media players and other state from outside OBS. */
   ext = $state.raw<ExtState>(emptyExtState());
   info = $state.raw<ServerInfo | null>(null);
   meters = $state.raw<Record<string, number>>({});
+  /** Live pictures of the scenes that scene buttons on screen show (data: URLs by scene name). */
+  thumbs = $state.raw<Record<string, string>>({});
   /** Current time on the server's clock; ticks every second for output timers. */
   now = $state(Date.now());
   toasts = $state<Toast[]>([]);
@@ -77,7 +81,15 @@ class Store {
   dragOverPage = $state<string | null>(null);
 
   /** Everything a button needs to work out how it looks (only valid once deck and obs are set). */
-  visualCtx: VisualCtx = $derived({ obs: this.obs!, deck: this.deck!, ext: this.ext, now: this.now, commands: this.info?.commands, platform: this.info?.platform });
+  visualCtx: VisualCtx = $derived({
+    obs: this.obs!,
+    deck: this.deck!,
+    ext: this.ext,
+    now: this.now,
+    commands: this.info?.commands,
+    platform: this.info?.platform,
+    thumbs: this.thumbs,
+  });
 
   currentPage: Page | undefined = $derived.by(() => {
     const deck = this.deck;
@@ -91,18 +103,27 @@ class Store {
   private buildId: string | null = null;
   private readonly meterInterest = new Interest<string>((inputs) => this.socket.send({ t: 'meters', inputs }));
   private readonly statInterest = new Interest<StatMetric>((metrics) => this.socket.send({ t: 'stats', metrics }));
-  private tick?: ReturnType<typeof setInterval>;
+  // The server takes up to 32 scenes; more live pictures than that on one screen would be unusual.
+  private readonly thumbInterest = new Interest<string>((scenes) => this.socket.send({ t: 'thumbs', scenes: scenes.slice(0, 32) }));
+  private tick?: ReturnType<typeof setTimeout>;
 
   start(): void {
     this.socket.onMessage = (msg) => this.handle(msg);
     this.socket.onStatus = (status) => (this.conn = status);
     this.socket.onNeedsKey = () => (this.pairing = 'needed');
     this.socket.connect();
-    this.tick = setInterval(() => (this.now = Date.now() + this.clockOffset), 1000);
+    this.ticking();
+  }
+
+  /** Ticks just after each full second of the server's clock, so clocks and timers change in step. */
+  private ticking(): void {
+    const now = Date.now() + this.clockOffset;
+    this.now = now;
+    this.tick = setTimeout(() => this.ticking(), 1000 - (now % 1000) + 5);
   }
 
   stop(): void {
-    clearInterval(this.tick);
+    clearTimeout(this.tick);
     this.socket.close();
   }
 
@@ -117,6 +138,7 @@ class Store {
         this.buildId = msg.buildId;
         this.syncClock(msg.serverTime);
         this.deck = msg.deck;
+        this.history = msg.history;
         this.obs = msg.obs;
         this.ext = msg.ext;
         this.info = msg.info;
@@ -124,9 +146,11 @@ class Store {
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
         this.meterInterest.flush();
         this.statInterest.flush();
+        this.thumbInterest.flush();
         break;
       case 'deck':
         this.deck = msg.deck;
+        this.history = msg.history;
         break;
       case 'obs':
         this.syncClock(msg.serverTime);
@@ -137,6 +161,9 @@ class Store {
         break;
       case 'meters':
         this.meters = msg.levels;
+        break;
+      case 'thumbs':
+        this.thumbs = { ...this.thumbs, ...msg.images };
         break;
       case 'toast':
         this.toast(msg.text, msg.level);
@@ -188,7 +215,8 @@ class Store {
     this.socket.reconnect();
   }
 
-  // ---- what's on screen: faders subscribe to their input's level, stats tiles to their metric ----
+  // ---- what's on screen: faders subscribe to their input's level, stats tiles to their metric,
+  // scene buttons with a live picture to their scene ----
 
   subscribeMeter(input: string): () => void {
     return this.meterInterest.add(input);
@@ -196,6 +224,10 @@ class Store {
 
   subscribeStat(metric: StatMetric): () => void {
     return this.statInterest.add(metric);
+  }
+
+  subscribeThumb(scene: string): () => void {
+    return this.thumbInterest.add(scene);
   }
 
   // ---- navigation (per device) ---------------------------------------------------------------
@@ -216,6 +248,26 @@ class Store {
   back(): void {
     const target = this.backStack.pop() ?? this.deck?.homePageId;
     if (target) this.show(target);
+  }
+
+  /** The next or previous page in tab order, wrapping around (Back returns from there). */
+  stepPage(direction: 'next' | 'previous'): void {
+    const pages = this.deck?.pages ?? [];
+    const index = pages.findIndex((p) => p.id === this.currentPage?.id);
+    if (pages.length < 2 || index < 0) return;
+    this.goTo(pages[(index + (direction === 'next' ? 1 : -1) + pages.length) % pages.length].id);
+  }
+
+  /** Undo or redo the last deck edit (anyone's). */
+  async undo(redo = false): Promise<void> {
+    const label = redo ? this.history.redo : this.history.undo;
+    if (!label) return;
+    try {
+      await this.op({ op: redo ? 'deck.redo' : 'deck.undo' });
+      this.toast(`${redo ? 'Redone' : 'Undone'}: ${label}`);
+    } catch {
+      // shown as a toast
+    }
   }
 
   private show(pageId: string): void {

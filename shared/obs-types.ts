@@ -40,6 +40,11 @@ export interface ObsOutput {
   paused?: boolean;
   reconnecting?: boolean;
   congestion?: number;
+  /** Streaming only: bytes sent so far, the bitrate between the last two readings, and network-dropped frames. */
+  bytes?: number;
+  bitrateKbps?: number;
+  skippedFrames?: number;
+  totalFrames?: number;
 }
 
 export interface ObsStats {
@@ -104,3 +109,14 @@ export function emptyObsState(connection: ObsConnection = 'disconnected'): ObsSt
 
 /** Media inputs that respond to TriggerMediaInputAction. */
 export const MEDIA_INPUT_KINDS = ['ffmpeg_source', 'vlc_source'];
+
+/** OBS's text sources: Text (GDI+) on Windows, Text (FreeType 2) on Linux, in all their versions. */
+export function isTextInputKind(kind: string): boolean {
+  return /^text_(gdiplus|ft2_source)/.test(kind);
+}
+
+export const BROWSER_INPUT_KIND = 'browser_source';
+
+/** What an OBS Stats tile can show. */
+export const OBS_STAT_METRICS = ['fps', 'cpu', 'bitrate', 'dropped', 'render', 'encode'] as const;
+export type ObsStatMetric = (typeof OBS_STAT_METRICS)[number];

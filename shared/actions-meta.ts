@@ -1,10 +1,10 @@
 // Everything the editor and the button renderer need to know about each action type.
 // Adding an action type = schema entry (schema.ts) + meta entry (here) + executor (server).
 import { followedPlayer, type ExtState, type StatMetric } from './ext-types.ts';
-import { prettyHotkey } from './format.ts';
+import { formatClock, prettyHotkey } from './format.ts';
 import { shortcutLabel } from './keys.ts';
 import { resolveInput, resolveScene, resolveSceneItem } from './obs-resolve.ts';
-import type { ObsState } from './obs-types.ts';
+import type { ObsStatMetric, ObsState } from './obs-types.ts';
 import type { Action, ActionOf, ActionType, Deck, IconRef } from './schema.ts';
 
 export const COLORS = {
@@ -31,6 +31,7 @@ export const CATEGORIES = [
   'More OBS',
   'Media',
   'System',
+  'Timers & Counters',
   'Integrations',
   'Macros',
   'Navigation',
@@ -43,6 +44,8 @@ export type FieldKind =
   | 'sceneItem'
   | 'audioInput'
   | 'mediaInput'
+  | 'textInput'
+  | 'browserInput'
   | 'filterSource'
   | 'anySource'
   | 'filter'
@@ -54,6 +57,10 @@ export type FieldKind =
   | 'headers'
   | 'checkbox'
   | 'mediaPlayer'
+  | 'sound'
+  | 'duration'
+  | 'action'
+  | 'targetButton'
   | 'macroSteps'
   | 'keys'
   | 'kdeComponent'
@@ -71,6 +78,8 @@ export const REF_KINDS: ReadonlySet<FieldKind> = new Set([
   'sceneItem',
   'audioInput',
   'mediaInput',
+  'textInput',
+  'browserInput',
   'filterSource',
   'anySource',
 ]);
@@ -172,6 +181,15 @@ export const STATS: Record<StatMetric, { label: string; option: string; icon: st
   gpuMemory: { label: 'VRAM', option: 'GPU memory in use (NVIDIA)', icon: 'expansion-card-variant' },
 };
 
+export const OBS_STATS: Record<ObsStatMetric, { label: string; option: string; icon: string }> = {
+  dropped: { label: 'Dropped', option: 'Dropped frames (network, while live)', icon: 'network-strength-2-alert' },
+  bitrate: { label: 'Bitrate', option: 'Stream bitrate (while live)', icon: 'speedometer' },
+  fps: { label: 'FPS', option: 'Frames per second', icon: 'filmstrip' },
+  cpu: { label: 'OBS CPU', option: 'OBS’s CPU use', icon: 'cpu-64-bit' },
+  render: { label: 'Render lag', option: 'Frames missed because of rendering lag', icon: 'monitor-dashboard' },
+  encode: { label: 'Encode lag', option: 'Frames skipped because of encoding lag', icon: 'chip' },
+};
+
 function volumeIcon(a: ActionOf<'system.volume'>, muted: boolean): IconRef {
   if (a.mode === 'step') return mdi((a.step ?? 5) >= 0 ? 'volume-plus' : 'volume-minus');
   if (a.target === 'input') return mdi(muted ? 'microphone-off' : 'microphone');
@@ -193,6 +211,8 @@ function commandName(command: string): string {
   return program.split(/[\\/]/).pop() ?? '';
 }
 
+const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
+
 type MetaTable = { [T in ActionType]: ActionMeta<T> };
 
 export const ACTION_META: MetaTable = {
@@ -213,6 +233,12 @@ export const ACTION_META: MetaTable = {
           { value: 'program', label: 'Program (live)' },
           { value: 'preview', label: 'Preview' },
         ],
+      },
+      {
+        key: 'preview',
+        label: 'Show a live picture of the scene',
+        kind: 'checkbox',
+        hint: 'Updated every 2 seconds while the button is on a screen. OBS renders each picture, which costs it a little GPU and CPU.',
       },
     ],
     create: () => ({ type: 'obs.scene', scene: noRef(), target: 'auto' }),
@@ -267,6 +293,29 @@ export const ACTION_META: MetaTable = {
     ],
     create: () => ({ type: 'obs.filter', source: noRef(), filter: '', mode: 'toggle' }),
     autoLabel: (a) => a.filter || 'Filter',
+  },
+  'obs.text': {
+    type: 'obs.text',
+    label: 'Set Text',
+    description: 'Replace what a text source shows, e.g. a “Back in 5 minutes” message or today’s topic.',
+    category: 'Scenes & Sources',
+    icon: mdi('format-text'),
+    fields: [
+      { key: 'input', label: 'Text source', kind: 'textInput' },
+      { key: 'text', label: 'Text', kind: 'multiline', optional: true, placeholder: 'e.g. Back in 5 minutes', hint: 'Empty clears the text.' },
+    ],
+    create: () => ({ type: 'obs.text', input: noRef(), text: '' }),
+    autoLabel: (a, { obs }) => (a.text ?? '').split('\n')[0].trim().slice(0, 40) || inputName(a.input, obs) || 'Set Text',
+  },
+  'obs.browserRefresh': {
+    type: 'obs.browserRefresh',
+    label: 'Refresh Browser Source',
+    description: 'Reload a browser source without its cache, e.g. when alerts or chat get stuck.',
+    category: 'Scenes & Sources',
+    icon: mdi('web-refresh'),
+    fields: [{ key: 'input', label: 'Browser source', kind: 'browserInput' }],
+    create: () => ({ type: 'obs.browserRefresh', input: noRef() }),
+    autoLabel: (a, { obs }) => inputName(a.input, obs) || 'Refresh',
   },
   'obs.mute': {
     type: 'obs.mute',
@@ -459,6 +508,24 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'obs.hotkey', name: '' }),
     autoLabel: (a) => (a.name ? prettyHotkey(a.name) : 'Hotkey'),
   },
+  'obs.stats': {
+    type: 'obs.stats',
+    label: 'OBS Stats',
+    description: 'Show how the stream is doing: dropped frames, bitrate, frame rate, OBS’s CPU use or lag. Tapping it does nothing.',
+    category: 'More OBS',
+    icon: (a) => mdi(OBS_STATS[a.metric].icon),
+    behavior: 'display',
+    fields: [
+      {
+        key: 'metric',
+        label: 'Show',
+        kind: 'select',
+        options: Object.entries(OBS_STATS).map(([value, s]) => ({ value, label: s.option })),
+      },
+    ],
+    create: () => ({ type: 'obs.stats', metric: 'dropped' }),
+    autoLabel: (a) => OBS_STATS[a.metric].label,
+  },
   'obs.collection': {
     type: 'obs.collection',
     label: 'Scene Collection',
@@ -508,6 +575,44 @@ export const ACTION_META: MetaTable = {
     ],
     create: () => ({ type: 'media.player', command: 'playPause', nowPlaying: true }),
     autoLabel: (a, { ext }) => (a.nowPlaying && ext && followedPlayer(ext, a.player)?.title) || PLAYER_COMMANDS[a.command].label,
+  },
+  'sound.play': {
+    type: 'sound.play',
+    label: 'Play Sound',
+    description: 'Play a sound clip (MP3 or WAV) on the PC’s speakers, like a soundboard. OBS hears it through Desktop Audio.',
+    category: 'Media',
+    platforms: ['linux', 'win32'],
+    icon: mdi('music-note'),
+    activeIcon: (a) => mdi(a.mode === 'toggle' ? 'stop' : 'music-note'),
+    activeBg: COLORS.teal,
+    fields: [
+      { key: 'sound', label: 'Sound', kind: 'sound' },
+      { key: 'volume', label: 'Volume (%)', kind: 'number', optional: true, min: 1, max: 100, step: 1, placeholder: '100' },
+      {
+        key: 'mode',
+        label: 'Pressed again while it plays',
+        kind: 'select',
+        options: [
+          { value: 'toggle', label: 'Stop it' },
+          { value: 'restart', label: 'Start it over' },
+          { value: 'overlap', label: 'Play it once more on top' },
+        ],
+      },
+    ],
+    create: () => ({ type: 'sound.play', sound: '', mode: 'toggle' }),
+    autoLabel: (a) => a.name?.replace(/\.[^.]*$/, '') || 'Sound',
+  },
+  'sound.stop': {
+    type: 'sound.stop',
+    label: 'Stop All Sounds',
+    description: 'Stop every sound the deck is playing. Lights up while any plays.',
+    category: 'Media',
+    platforms: ['linux', 'win32'],
+    icon: mdi('volume-off'),
+    activeBg: COLORS.teal,
+    fields: [],
+    create: () => ({ type: 'sound.stop' }),
+    autoLabel: () => 'Stop Sounds',
   },
   'system.volume': {
     type: 'system.volume',
@@ -612,6 +717,153 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'kde.shortcut', component: '', shortcut: '' }),
     autoLabel: (a) => a.title || a.shortcut || 'KDE Shortcut',
   },
+  'system.text': {
+    type: 'system.text',
+    label: 'Type Text',
+    description: 'Type a text into the window that has focus, e.g. a chat message or your e-mail address.',
+    category: 'System',
+    platforms: ['linux', 'win32'],
+    icon: mdi('form-textbox'),
+    fields: [
+      { key: 'text', label: 'Text', kind: 'multiline', placeholder: 'e.g. Thanks for the follow! ❤️' },
+      { key: 'enter', label: 'Press Enter afterwards', kind: 'checkbox', hint: 'To send it, e.g. in a chat.' },
+    ],
+    create: () => ({ type: 'system.text', text: '' }),
+    autoLabel: (a) => {
+      const line = a.text.trim().split('\n')[0];
+      return line.length > 24 ? `${line.slice(0, 23)}…` : line || 'Type Text';
+    },
+  },
+  'system.openUrl': {
+    type: 'system.openUrl',
+    label: 'Open Website',
+    description: 'Open a web page in the PC’s default browser, e.g. your stream dashboard.',
+    category: 'System',
+    platforms: ['linux', 'win32'],
+    icon: mdi('web'),
+    fields: [{ key: 'url', label: 'Address', kind: 'url', placeholder: 'https://dashboard.twitch.tv/' }],
+    create: () => ({ type: 'system.openUrl', url: '' }),
+    autoLabel: (a) => urlHost(a.url).replace(/^www\./, '') || 'Website',
+  },
+  counter: {
+    type: 'counter',
+    label: 'Counter',
+    description: 'Count something (deaths, wins, …) on the button, the same on every device. Tap adds one, a long press resets it. Can show the count in an OBS text source.',
+    category: 'Timers & Counters',
+    icon: mdi('counter'),
+    fields: [
+      {
+        key: 'mode',
+        label: 'When pressed',
+        kind: 'select',
+        options: [
+          { value: 'add', label: 'Add (or subtract)' },
+          { value: 'set', label: 'Set to a number (e.g. 0 to reset)' },
+        ],
+      },
+      { key: 'step', label: 'Add', kind: 'number', optional: true, min: -1_000_000, max: 1_000_000, step: 1, placeholder: '1', show: (a) => a.mode === 'add', hint: 'Negative numbers subtract.' },
+      { key: 'value', label: 'Set to', kind: 'number', optional: true, step: 1, placeholder: '0', show: (a) => a.mode === 'set' },
+      {
+        key: 'target',
+        label: 'Which counter',
+        kind: 'targetButton',
+        optional: true,
+        emptyLabel: 'This button’s own',
+        hint: 'Another Counter button changes that button’s count (handy in macros).',
+      },
+      { key: 'textSource', label: 'Also show it in an OBS text source', kind: 'textInput', optional: true, show: (a) => !a.target && a.mode === 'add' },
+      {
+        key: 'textFormat',
+        label: 'Text',
+        kind: 'text',
+        optional: true,
+        placeholder: '{n}',
+        show: (a) => !a.target && a.mode === 'add' && !!a.textSource?.name,
+        hint: '{n} becomes the count, e.g. “Deaths: {n}”.',
+      },
+    ],
+    create: () => ({ type: 'counter', mode: 'add' }),
+    autoLabel: (a) => {
+      if (a.mode === 'set') return a.value ? `Set ${a.value}` : 'Reset';
+      return a.target || (a.step ?? 1) !== 1 ? signed(a.step ?? 1) : 'Counter';
+    },
+  },
+  timer: {
+    type: 'timer',
+    label: 'Timer',
+    description: 'A countdown or stopwatch on the button, the same on every device. Tap starts and pauses, a long press resets it. Can show the time in an OBS text source.',
+    category: 'Timers & Counters',
+    icon: (a) => mdi(a.mode === 'reset' ? 'timer-refresh-outline' : a.durationSec ? 'timer-sand' : 'timer-outline'),
+    activeBg: COLORS.green,
+    fields: [
+      {
+        key: 'mode',
+        label: 'When pressed',
+        kind: 'select',
+        options: [
+          { value: 'toggle', label: 'Start / pause' },
+          { value: 'restart', label: 'Start from the beginning' },
+          { value: 'reset', label: 'Reset' },
+        ],
+      },
+      {
+        key: 'target',
+        label: 'Which timer',
+        kind: 'targetButton',
+        optional: true,
+        emptyLabel: 'This button’s own',
+        hint: 'Another Timer button controls that button’s timer (handy in macros).',
+      },
+      {
+        key: 'durationSec',
+        label: 'Count down from',
+        kind: 'duration',
+        optional: true,
+        placeholder: 'e.g. 5:00 (empty: count up)',
+        show: (a) => !a.target && a.mode !== 'reset',
+        hint: 'Minutes:seconds, or hours:minutes:seconds. Empty makes it a stopwatch that counts up.',
+      },
+      { key: 'textSource', label: 'Also show it in an OBS text source', kind: 'textInput', optional: true, show: (a) => !a.target && a.mode !== 'reset' },
+      {
+        key: 'textFormat',
+        label: 'Text',
+        kind: 'text',
+        optional: true,
+        placeholder: '{time}',
+        show: (a) => !a.target && a.mode !== 'reset' && !!a.textSource?.name,
+        hint: '{time} becomes the time, e.g. “Starting in {time}”.',
+      },
+      {
+        key: 'doneText',
+        label: 'Text when the countdown is done',
+        kind: 'text',
+        optional: true,
+        placeholder: 'e.g. Starting now!',
+        show: (a) => !a.target && a.mode !== 'reset' && !!a.textSource?.name && !!a.durationSec,
+      },
+    ],
+    create: () => ({ type: 'timer', mode: 'toggle', durationSec: 300 }),
+    autoLabel: (a) => {
+      if (a.mode === 'reset') return 'Reset';
+      if (a.mode === 'restart') return a.durationSec && !a.target ? `${formatClock(a.durationSec)} again` : 'Restart';
+      return a.target ? 'Start/Pause' : a.durationSec ? 'Countdown' : 'Stopwatch';
+    },
+  },
+  clock: {
+    type: 'clock',
+    label: 'Clock',
+    description: 'Show the time of day, and the date if you like. Tapping it does nothing.',
+    category: 'Timers & Counters',
+    icon: mdi('clock-outline'),
+    behavior: 'display',
+    fields: [
+      { key: 'seconds', label: 'Show seconds', kind: 'checkbox' },
+      { key: 'hour12', label: '12-hour clock (AM/PM)', kind: 'checkbox' },
+      { key: 'date', label: 'Show the date', kind: 'checkbox' },
+    ],
+    create: () => ({ type: 'clock', date: true }),
+    autoLabel: () => '',
+  },
   'system.command': {
     type: 'system.command',
     label: 'Run Command',
@@ -711,6 +963,21 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'macro', steps: [], stopOnError: true }),
     autoLabel: () => 'Macro',
   },
+  toggle: {
+    type: 'toggle',
+    label: 'Toggle',
+    description: 'Switch between two actions: the first press runs one, the next press the other. The button stays lit in between (e.g. lights on and off through webhooks).',
+    category: 'Macros',
+    icon: mdi('toggle-switch-off-outline'),
+    activeIcon: mdi('toggle-switch'),
+    activeBg: COLORS.green,
+    fields: [
+      { key: 'on', label: 'First press (turns it on)', kind: 'action' },
+      { key: 'off', label: 'Next press (turns it off)', kind: 'action' },
+    ],
+    create: () => ({ type: 'toggle', on: ACTION_META['http.request'].create(), off: ACTION_META['http.request'].create() }),
+    autoLabel: (a, ctx) => actionAutoLabel(a.on, ctx),
+  },
   'deck.page': {
     type: 'deck.page',
     label: 'Open Page / Folder',
@@ -733,6 +1000,27 @@ export const ACTION_META: MetaTable = {
     create: () => ({ type: 'deck.back' }),
     autoLabel: () => 'Back',
   },
+  'deck.pageStep': {
+    type: 'deck.pageStep',
+    label: 'Next / Previous Page',
+    description: 'Go to the next or previous page, in the order of the tabs (after the last comes the first).',
+    category: 'Navigation',
+    icon: (a) => mdi(a.direction === 'next' ? 'page-next-outline' : 'page-previous-outline'),
+    behavior: 'nav',
+    fields: [
+      {
+        key: 'direction',
+        label: 'Go to',
+        kind: 'select',
+        options: [
+          { value: 'next', label: 'The next page' },
+          { value: 'previous', label: 'The previous page' },
+        ],
+      },
+    ],
+    create: () => ({ type: 'deck.pageStep', direction: 'next' }),
+    autoLabel: (a) => (a.direction === 'next' ? 'Next Page' : 'Previous Page'),
+  },
 };
 
 // The table is keyed per type; these helpers erase that to work on any Action.
@@ -753,12 +1041,26 @@ export function availableActionTypes(commands: boolean, platform?: string): Acti
   return ACTION_TYPES.filter((t) => (commands || !ACTION_META[t].needsCommands) && actionSupported(t, platform));
 }
 
+/**
+ * Whether an action type can be a macro step (and so one side of a toggle): it just runs, without
+ * holding, dragging or only showing something, and it isn't navigation, a macro or a toggle.
+ */
+export function isStepType(type: ActionType): boolean {
+  if (type === 'macro' || type === 'toggle' || type.startsWith('deck.')) return false;
+  return actionBehavior(ACTION_META[type].create() as Action) === 'press';
+}
+
 export function actionMeta(type: ActionType): ActionMeta<ActionType> {
   return ACTION_META[type] as unknown as ActionMeta<ActionType>;
 }
 
 export function actionBehavior(action: Action): Behavior {
   return pick(metaFor(action).behavior, action) ?? 'press';
+}
+
+/** actionBehavior for the schema's checks, whose types can't refer to Action while it is being defined. */
+export function behaviorOf(action: { type: string }): Behavior {
+  return actionBehavior(action as Action);
 }
 
 export function actionAutoLabel(action: Action, ctx: LabelCtx): string {
@@ -791,7 +1093,7 @@ export function missingFields(action: Action): string[] {
       const v = values[f.key];
       if (REF_KINDS.has(f.kind)) return !(v as { name?: string } | undefined)?.name;
       if (f.kind === 'number') return typeof v !== 'number' || Number.isNaN(v);
-      if (f.kind === 'checkbox') return false;
+      if (f.kind === 'checkbox' || f.kind === 'action') return false;
       if (f.kind === 'macroSteps' || f.kind === 'keys') return !Array.isArray(v) || v.length === 0;
       return typeof v !== 'string' || v === '';
     })
@@ -800,6 +1102,10 @@ export function missingFields(action: Action): string[] {
     action.steps.forEach((step, i) => {
       if ('action' in step) missing.push(...missingFields(step.action).map((name) => `step ${i + 1} ${name.toLowerCase()}`));
     });
+  }
+  if (action.type === 'toggle') {
+    missing.push(...missingFields(action.on).map((name) => `first press: ${name.toLowerCase()}`));
+    missing.push(...missingFields(action.off).map((name) => `next press: ${name.toLowerCase()}`));
   }
   return missing;
 }

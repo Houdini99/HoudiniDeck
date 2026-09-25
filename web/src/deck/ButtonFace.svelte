@@ -17,6 +17,7 @@
   class:program={visual.ring === 'program'}
   class:preview={visual.ring === 'preview'}
   class:busy={visual.busy}
+  class:alert={visual.alert}
   class:dim={visual.offline || visual.disabled}
   class:bleed
   class:has-badge={!!visual.badge}
@@ -24,9 +25,9 @@
   style:--fg={visual.fg}
 >
   <!-- Sizes below use cqi, which resolve against .face (a size container) only inside it. -->
-  <div class="inner">
+  <div class="inner {visual.labelPos ?? 'bottom'}">
     {#if visual.gauge}
-      <div class="gauge" class:with-label={labelShown}>
+      <div class="gauge" class:with-label={labelShown} style:--chars={Math.max(4, visual.gauge.text.length)}>
         <span class="gauge-value">{visual.gauge.text}</span>
         {#if visual.gauge.detail}<span class="gauge-detail">{visual.gauge.detail}</span>{/if}
         {#if visual.gauge.level !== undefined}
@@ -38,10 +39,12 @@
         <img class="art" src={image} alt="" draggable="false" onerror={() => (failedImage = image)} />
       </div>
     {:else if visual.icon}
-      <div class="icon-wrap" class:with-label={labelShown}><Icon icon={visual.icon} cover={bleed} /></div>
+      <div class="icon-wrap" class:with-label={labelShown && visual.labelPos !== 'middle'} class:under-label={labelShown && visual.labelPos === 'middle' && !bleed}>
+        <Icon icon={visual.icon} cover={bleed} />
+      </div>
     {/if}
     {#if labelShown}
-      <div class="label">{visual.label}</div>
+      <div class="label {visual.labelSize ?? ''}">{visual.label}</div>
     {/if}
   </div>
   {#if visual.badge}
@@ -108,6 +111,33 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
   }
+  .label.small {
+    font-size: clamp(8px, 10cqi, 18px);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .label.large {
+    font-size: clamp(11px, 17cqi, 30px);
+  }
+  /* Label on top: above the icon (or at the top edge of a picture). */
+  .inner.top {
+    flex-direction: column-reverse;
+  }
+  /* Label in the middle: over the icon, which keeps its full size but steps back. */
+  .icon-wrap.under-label {
+    opacity: 0.35;
+  }
+  .inner.middle .label {
+    position: absolute;
+    top: 50%;
+    right: 6cqi;
+    left: 6cqi;
+    max-width: none;
+    text-shadow:
+      0 1px 3px rgb(0 0 0 / 0.9),
+      0 0 10px rgb(0 0 0 / 0.6);
+    transform: translateY(-50%);
+  }
   .bleed .icon-wrap {
     position: absolute;
     inset: 0;
@@ -122,13 +152,15 @@
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
+  /* Longer readings (a clock with seconds, a big count) get smaller so they fit. */
   .gauge-value {
-    font-size: clamp(14px, 30cqi, 56px);
+    font-size: clamp(12px, min(30cqi, calc(150cqi / var(--chars))), 56px);
     font-weight: 700;
     letter-spacing: -0.02em;
+    white-space: nowrap;
   }
   .gauge.with-label .gauge-value {
-    font-size: clamp(12px, 25cqi, 48px);
+    font-size: clamp(11px, min(25cqi, calc(140cqi / var(--chars))), 48px);
   }
   .gauge-detail {
     margin-top: 3cqi;
@@ -177,6 +209,20 @@
     background: linear-gradient(transparent, rgb(0 0 0 / 0.78));
     color: #fff;
   }
+  .bleed .inner.top .label {
+    top: 0;
+    bottom: auto;
+    padding: 7cqi 6cqi 16cqi;
+    background: linear-gradient(rgb(0 0 0 / 0.78), transparent);
+  }
+  .bleed .inner.middle .label {
+    top: 50%;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    padding: 4cqi 6cqi;
+    background: rgb(0 0 0 / 0.55);
+  }
   /* The ring is drawn by a pseudo-element so its cqi width is relative to this button. */
   .program::after,
   .preview::after {
@@ -199,6 +245,23 @@
   }
   .busy {
     animation: pulse 1s ease-in-out infinite;
+  }
+  /* A countdown that ran out: a red ring, and the button flashes until someone taps it. */
+  .alert {
+    animation: alert 0.8s ease-in-out infinite alternate;
+  }
+  .alert::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 max(3px, 4.5cqi) #e5484d;
+    pointer-events: none;
+  }
+  @keyframes alert {
+    to {
+      background: color-mix(in srgb, var(--bg) 45%, #e5484d);
+    }
   }
   .dim {
     opacity: 0.42;

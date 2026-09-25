@@ -6,6 +6,7 @@ import { ActionError, type ExecutorRegistry } from '../server/actions/executor.t
 import { systemExecutor } from '../server/actions/system.ts';
 import { silentLogger } from '../server/log.ts';
 import type { RunResult, Runner } from '../server/system/process.ts';
+import { pasteText } from '../server/system/text.ts';
 import { actionAutoLabel } from '../shared/actions-meta.ts';
 import { KEYS, keyFromDom, shortcutLabel, ydotoolKeyArgs } from '../shared/keys.ts';
 import { ActionSchema, type ActionOf, type Deck } from '../shared/schema.ts';
@@ -67,7 +68,20 @@ test('held keys are released when the device that holds them disconnects', async
     pages: [{ id: 'p', name: 'P', rows: 1, cols: 1, buttons: { '0-0': { id: 'ptt', tap: { ...ctrlM, hold: true } } } }],
   };
   const unused = async () => {};
-  const executors = { system: execute, obs: unused, http: unused, media: unused, kde: unused, macro: unused, deck: unused } as ExecutorRegistry;
+  const executors = {
+    system: execute,
+    obs: unused,
+    http: unused,
+    media: unused,
+    sound: unused,
+    kde: unused,
+    macro: unused,
+    toggle: unused,
+    counter: unused,
+    timer: unused,
+    clock: unused,
+    deck: unused,
+  } as ExecutorRegistry;
   const dispatcher = new Dispatcher({ executors, getDeck: () => deck, log: silentLogger });
   await dispatcher.hold('tablet', 'p', 'ptt', true);
   await dispatcher.releaseAll('tablet');
@@ -100,4 +114,44 @@ test('the schema knows the keys, and held shortcuts can’t be macro steps', () 
   assert.equal(ActionSchema.safeParse({ type: 'system.hotkey', keys: ['KEY_NOPE'] }).success, false);
   assert.equal(ActionSchema.safeParse({ type: 'macro', steps: [{ action: ctrlM }] }).success, true);
   assert.equal(ActionSchema.safeParse({ type: 'macro', steps: [{ action: { ...ctrlM, hold: true } }] }).success, false);
+});
+
+test('Type Text on Linux: the text goes on the clipboard, then Ctrl+V (and Enter) through ydotool', async () => {
+  const calls: string[][] = [];
+  const run = async (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  const launched: string[][] = [];
+  const launch = async (cmd: string, args: string[]) => {
+    launched.push([cmd, ...args]);
+    return 0;
+  };
+  const sleep = async () => {};
+  await pasteText('Grüße -- “hi” 🎉', true, { run, launch, sleep });
+  assert.deepEqual(launched, [['wl-copy', '--', 'Grüße -- “hi” 🎉']], 'the text is one argument, after --');
+  assert.deepEqual(calls, [['ydotool', 'key', '29:1', '47:1', '47:0', '29:0', '28:1', '28:0']]);
+
+  // Without wl-clipboard, KDE's clipboard (Klipper) takes the text over D-Bus.
+  calls.length = 0;
+  const enoent = Object.assign(new Error('spawn wl-copy ENOENT'), { code: 'ENOENT' });
+  await pasteText('x', false, { run, launch: async () => Promise.reject(enoent), sleep });
+  assert.deepEqual(calls[0], ['busctl', '--user', 'call', 'org.kde.klipper', '/klipper', 'org.kde.klipper.klipper', 'setClipboardContents', 's', 'x']);
+  assert.deepEqual(calls[1], ['ydotool', 'key', '29:1', '47:1', '47:0', '29:0']);
+
+  const noClipboard = async (cmd: string) => (cmd === 'busctl' ? Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })) : { code: 0, stdout: '', stderr: '' });
+  await assert.rejects(pasteText('x', false, { run: noClipboard, launch: async () => 1, sleep }), /Install wl-clipboard/);
+});
+
+test('Type Text on Windows goes to the helper as text', async () => {
+  const requests: { op: string; args: Record<string, unknown> }[] = [];
+  const helper = {
+    async request<T>(op: string, args: Record<string, unknown> = {}) {
+      requests.push({ op, args });
+      return null as T;
+    },
+  };
+  const execute = systemExecutor({ run: async () => assert.fail('no Linux programs'), audio: { refresh: async () => {} }, commandsEnabled: false, windows: helper });
+  await execute({ type: 'system.text', text: 'GG ✌️', enter: true }, { kind: 'press' });
+  assert.deepEqual(requests, [{ op: 'text', args: { text: 'GG ✌️', enter: true } }]);
 });

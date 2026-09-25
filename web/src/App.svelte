@@ -6,6 +6,7 @@
   import { setKeepAwake } from './lib/device.ts';
   import { takeKeyFromUrl } from './lib/key.ts';
   import { prefs, savePrefs } from './lib/prefs.svelte.ts';
+  import IdleDim from './lib/IdleDim.svelte';
   import { store } from './lib/store.svelte.ts';
   import Toasts from './lib/Toasts.svelte';
   import UiIcon from './lib/UiIcon.svelte';
@@ -27,6 +28,17 @@
   });
 
   $effect(() => savePrefs($state.snapshot(prefs)));
+
+  // Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo deck edits in edit mode; text boxes keep their own undo.
+  function onKey(e: KeyboardEvent): void {
+    if (!store.editMode || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const key = e.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return;
+    e.preventDefault();
+    void store.undo(key === 'y' || e.shiftKey);
+  }
   $effect(() => setKeepAwake(prefs.keepAwake && store.conn === 'open'));
 
   // Leaving edit mode closes the editors.
@@ -37,6 +49,8 @@
     }
   });
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 {#if store.pairing}
   <Pairing />
@@ -54,6 +68,7 @@
   {/if}
   {#if store.pagesOpen}<PageManager />{/if}
   {#if store.settingsOpen}<Settings />{/if}
+  {#if !store.editMode}<IdleDim />{/if}
 {/if}
 <Toasts />
 

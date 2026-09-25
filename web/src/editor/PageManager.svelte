@@ -56,6 +56,10 @@
     }, quiet);
   }
 
+  function duplicate(page: Page): void {
+    store.op<{ pageId: string }>({ op: 'page.duplicate', pageId: page.id }).then((r) => r && store.toast(`Copied “${page.name}”`), quiet);
+  }
+
   function move(page: Page, delta: number): void {
     store.op({ op: 'page.move', pageId: page.id, toIndex: deck.pages.indexOf(page) + delta }).catch(quiet);
   }
@@ -102,6 +106,15 @@
                 onclick={() => store.op({ op: 'deck.setHome', pageId: page.id }).catch(quiet)}
               >
                 <UiIcon name={page.id === deck.homePageId ? 'home' : 'home-outline'} />
+              </button>
+              <button
+                class="icon-btn"
+                title="Duplicate page"
+                aria-label="Duplicate page"
+                disabled={deck.pages.length >= LIMITS.maxPages}
+                onclick={() => duplicate(page)}
+              >
+                <UiIcon name="content-copy" />
               </button>
               <button class="icon-btn" title="Move up" aria-label="Move up" disabled={i === 0} onclick={() => move(page, -1)}>
                 <UiIcon name="arrow-up" />

@@ -11,6 +11,7 @@
     missingFields,
   } from '$shared/actions-meta.ts';
   import { buttonVisual } from '$shared/feedback.ts';
+  import { resolveScene } from '$shared/obs-resolve.ts';
   import type { Action, ActionType, Appearance, Button, IconRef, NewButton } from '$shared/schema.ts';
   import ButtonFace from '../deck/ButtonFace.svelte';
   import Icon from '../lib/Icon.svelte';
@@ -18,6 +19,7 @@
   import UiIcon from '../lib/UiIcon.svelte';
   import ActionForm from './ActionForm.svelte';
   import ActionPicker from './ActionPicker.svelte';
+  import ButtonApi from './ButtonApi.svelte';
   import ColorPicker from './ColorPicker.svelte';
   import IconPicker from './IconPicker.svelte';
 
@@ -35,7 +37,17 @@
     'obs.collection',
     'obs.profile',
     'media.player',
+    'sound.play',
+    'sound.stop',
+    'toggle',
+    'timer',
   ]);
+
+  // New Counter and Timer buttons reset on a long press, like on a Stream Deck.
+  const RESET_ON_LONG_PRESS: Partial<Record<ActionType, () => Action>> = {
+    counter: () => ({ type: 'counter', mode: 'set' }),
+    timer: () => ({ type: 'timer', mode: 'reset' }),
+  };
 
   // The editor is keyed on the slot it edits (see App.svelte), so this is fixed for its lifetime.
   const target = store.editing!;
@@ -68,10 +80,12 @@
   const stateful = $derived(!!draft.tap && STATEFUL.has(draft.tap.type));
   const ownsGesture = $derived(!!draft.tap && ['hold', 'fader'].includes(actionBehavior(draft.tap)));
 
-  // The preview of a new stats tile needs its numbers too.
+  // The preview of a new stats tile needs its numbers too, and a scene button its live picture.
   $effect(() => {
     const tap = draft.tap;
     if (tap?.type === 'system.stats') return store.subscribeStat(tap.metric);
+    const scene = tap?.type === 'obs.scene' && tap.preview && store.obs ? resolveScene(store.obs, tap.scene)?.name : undefined;
+    if (scene) return store.subscribeThumb(scene);
   });
 
   // Close if the page disappears underneath us (deleted on another device).
@@ -87,6 +101,14 @@
     const meta = actionMeta(type);
     draft.tap = meta.create();
     if (!existing && meta.confirmByDefault) draft.confirm = true;
+    // An automatic reset from the previous choice (still untouched) goes with it.
+    const longPress = draft.longPress && $state.snapshot(draft.longPress);
+    if (longPress && JSON.stringify(longPress) === JSON.stringify(RESET_ON_LONG_PRESS[longPress.type]?.())) draft.longPress = undefined;
+    const reset = RESET_ON_LONG_PRESS[type];
+    if (reset && !draft.longPress) {
+      draft.longPress = reset();
+      showLongPress = true;
+    }
     previewActive = false;
     picking = false;
   }
@@ -147,6 +169,18 @@
       store.toast('Button duplicated');
       close();
     }, () => {});
+  }
+
+  const otherPages = $derived((store.deck?.pages ?? []).filter((p) => p.id !== target.pageId));
+
+  async function copyTo(select: HTMLSelectElement): Promise<void> {
+    const toPageId = select.value;
+    select.value = '';
+    const name = otherPages.find((p) => p.id === toPageId)?.name;
+    await store.op({ op: 'button.duplicate', pageId: target.pageId, slot: target.slot, toPageId }).then(
+      () => store.toast(`Copied to “${name}”`),
+      () => {},
+    );
   }
 
   async function createFolder(e: SubmitEvent): Promise<void> {
@@ -242,6 +276,24 @@
             <span>Show the label</span>
             <input type="checkbox" checked={!draft.hideLabel} onchange={(e) => (draft.hideLabel = !e.currentTarget.checked)} />
           </label>
+          {#if !draft.hideLabel}
+            <div class="row label-look">
+              <div class="segmented" role="group" aria-label="Label position">
+                {#each [['bottom', 'Bottom'], ['middle', 'Middle'], ['top', 'Top']] as const as [pos, name] (pos)}
+                  <button type="button" class:active={(draft.labelPos ?? 'bottom') === pos} onclick={() => (draft.labelPos = pos === 'bottom' ? undefined : pos)}>
+                    {name}
+                  </button>
+                {/each}
+              </div>
+              <div class="segmented" role="group" aria-label="Label size">
+                {#each [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']] as const as [size, name] (size)}
+                  <button type="button" class:active={(draft.labelSize ?? 'normal') === size} onclick={() => (draft.labelSize = size === 'normal' ? undefined : size)}>
+                    {name}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
           <div class="field">
             <span>Icon</span>
             <div class="row">
@@ -328,6 +380,21 @@
           <input type="checkbox" bind:checked={draft.confirm} />
         </label>
 
+        {#if existing && otherPages.length}
+          <label class="field">
+            <span>Copy this button to another page</span>
+            <select value="" onchange={(e) => copyTo(e.currentTarget)}>
+              <option value="" disabled>Choose a page…</option>
+              {#each otherPages as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+            </select>
+            <small class="hint">Copies the button as it was last saved.</small>
+          </label>
+        {/if}
+
+        {#if existing?.tap || existing?.longPress}
+          <ButtonApi buttonId={existing.id} />
+        {/if}
+
         {#if error}<p class="error">{error}</p>{/if}
       {/if}
     </div>
@@ -406,6 +473,9 @@
   .segmented button.active {
     background: var(--surface-3);
     color: var(--text);
+  }
+  .label-look {
+    gap: 10px;
   }
   .group {
     display: grid;

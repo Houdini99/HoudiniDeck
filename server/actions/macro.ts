@@ -2,10 +2,10 @@
 // as buttons do; the schema keeps macros and page navigation out of the steps.
 import type { Action } from '../../shared/schema.ts';
 import { errorMessage, type Logger } from '../log.ts';
-import { ActionError, type Executor, type Phase } from './executor.ts';
+import { ActionError, type ActionCtx, type Executor, type Phase } from './executor.ts';
 
 export interface MacroDeps {
-  run: (action: Action, phase: Phase) => Promise<void>;
+  run: (action: Action, phase: Phase, ctx?: ActionCtx) => Promise<void>;
   log: Logger;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -17,7 +17,7 @@ export function macroExecutor(deps: MacroDeps): Executor<'macro'> {
   /** Macros in progress (the deck's action objects), so a second tap doesn't start a second run. */
   const running = new WeakSet<object>();
 
-  return async (macro) => {
+  return async (macro, _phase, ctx) => {
     if (running.has(macro)) throw new ActionError('This macro is still running');
     running.add(macro);
     const failed: string[] = [];
@@ -28,7 +28,7 @@ export function macroExecutor(deps: MacroDeps): Executor<'macro'> {
           continue;
         }
         try {
-          await deps.run(step.action, { kind: 'press' });
+          await deps.run(step.action, { kind: 'press' }, ctx);
         } catch (err) {
           if (!(err instanceof ActionError)) deps.log.error(`Macro step ${i + 1} failed:`, err);
           const why = err instanceof ActionError ? err.message : 'something went wrong';

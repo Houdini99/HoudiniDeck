@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyEvent, sortScenes } from '../server/obs/state.ts';
+import { ObsStateStore, applyEvent, applyOutputState, sortScenes } from '../server/obs/state.ts';
 import { emptyObsState, type ObsState } from '../shared/obs-types.ts';
 
 function state(): ObsState {
@@ -100,4 +100,33 @@ test('filters, collections and unknown events', () => {
   assert.deepEqual(applyEvent(s, 'SourceFilterCreated', { sourceName: 'Mic', filterName: 'EQ' }, 0).refetch, [{ kind: 'filters', source: 'Mic' }]);
   assert.deepEqual(applyEvent(s, 'CurrentSceneCollectionChanged', { sceneCollectionName: 'B' }, 0).refetch, [{ kind: 'full' }]);
   assert.deepEqual(applyEvent(s, 'SomethingNew', {}, 0), { changed: false, refetch: [] });
+});
+
+test('while streaming, polls work out the bitrate and keep the network-dropped frames', async () => {
+  const store = new ObsStateStore();
+  store.state.connection = 'connected';
+  applyOutputState(store.state.stream, 'OBS_WEBSOCKET_OUTPUT_STARTED', Date.now());
+  let bytes = 1_000_000;
+  const caller = {
+    call: async () => ({}),
+    callBatch: async (requests: { requestType: string }[]) =>
+      requests.map((r) => ({
+        requestType: r.requestType,
+        requestStatus: { result: true, code: 100 },
+        responseData:
+          r.requestType === 'GetStreamStatus'
+            ? { outputActive: true, outputDuration: 5000, outputBytes: bytes, outputSkippedFrames: 3, outputTotalFrames: 300 }
+            : { cpuUsage: 5, activeFps: 60, renderSkippedFrames: 0, renderTotalFrames: 100, outputSkippedFrames: 0, outputTotalFrames: 100 },
+      })),
+  };
+  await store.poll(caller as never);
+  assert.equal(store.state.stream.bytes, 1_000_000);
+  assert.equal(store.state.stream.bitrateKbps, undefined, 'one reading isn’t a rate yet');
+  store.state.stream.sampledAt = Date.now() - 2000; // two seconds later…
+  bytes += 1_500_000; // …1.5 MB more: 6000 kbit/s
+  await store.poll(caller as never);
+  assert.ok(Math.abs(store.state.stream.bitrateKbps! - 6000) < 30, String(store.state.stream.bitrateKbps));
+  assert.deepEqual([store.state.stream.skippedFrames, store.state.stream.totalFrames], [3, 300]);
+  applyOutputState(store.state.stream, 'OBS_WEBSOCKET_OUTPUT_STOPPED', Date.now());
+  assert.equal(store.state.stream.bitrateKbps, undefined, 'a new stream starts from zero');
 });

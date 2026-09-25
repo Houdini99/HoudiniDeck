@@ -212,6 +212,16 @@
           <span>Keep the screen on<small>Starts after your next tap. Best effort over plain http.</small></span>
           <input type="checkbox" bind:checked={prefs.keepAwake} />
         </label>
+        <label class="field">
+          <span>Dim the screen when not used for</span>
+          <select bind:value={prefs.dimAfterMin}>
+            <option value={0}>Never</option>
+            {#each [1, 2, 5, 10, 15, 30, 60] as minutes (minutes)}
+              <option value={minutes}>{minutes} minute{minutes === 1 ? '' : 's'}</option>
+            {/each}
+          </select>
+          <small class="hint">A dark screen with a faint clock, for tablets that stay on. The tap that wakes it doesn’t press a button.</small>
+        </label>
         {#if canFullscreen()}
           <div><button class="btn" onclick={toggleFullscreen}><UiIcon name="fullscreen" size={18} /> Toggle fullscreen</button></div>
         {:else}

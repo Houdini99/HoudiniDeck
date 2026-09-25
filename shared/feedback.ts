@@ -1,11 +1,13 @@
 // Derives how a button should look from its action and the live OBS state. Pure; runs in the browser.
-import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon, actionSupported } from './actions-meta.ts';
-import { followedPlayer, type ExtState, type StatMetric, type StatsState } from './ext-types.ts';
+import { ACTION_META, COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon, actionSupported } from './actions-meta.ts';
+import { counterDefinitions, timerDefinition, withNested } from './deck-utils.ts';
+import { followedPlayer, soundKey, type ExtState, type StatMetric, type StatsState } from './ext-types.ts';
 import { mulToPos } from './fader.ts';
-import { formatDb, formatDuration } from './format.ts';
+import { formatClock, formatDb, formatDuration, formatTimeOfDay } from './format.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from './obs-resolve.ts';
-import type { ObsOutput, ObsState } from './obs-types.ts';
-import type { Action, Button, Deck, IconRef } from './schema.ts';
+import { timerReading } from './timers.ts';
+import type { ObsOutput, ObsStatMetric, ObsState } from './obs-types.ts';
+import type { Action, ActionOf, Button, Deck, IconRef } from './schema.ts';
 
 export interface VisualCtx {
   obs: ObsState;
@@ -17,6 +19,8 @@ export interface VisualCtx {
   commands?: boolean;
   /** The server's operating system; buttons it can't run (e.g. KDE shortcuts on Windows) are dimmed. */
   platform?: string;
+  /** Live pictures of scenes (data: URLs by scene name), for scene buttons that show one. */
+  thumbs?: Record<string, string>;
 }
 
 export type Tone = 'live' | 'rec' | 'paused' | 'busy';
@@ -37,6 +41,8 @@ export interface ActionStatus {
   image?: string;
   /** Stats tiles: a big value instead of the icon, and a bar filled to `level` (0..1) when there is a reading. */
   gauge?: { text: string; detail?: string; level?: number; tone?: 'warm' | 'hot' };
+  /** Wants attention (a countdown that ran out): the button flashes. */
+  alert?: boolean;
 }
 
 export interface ButtonVisual extends ActionStatus {
@@ -44,6 +50,8 @@ export interface ButtonVisual extends ActionStatus {
   icon?: IconRef;
   bg: string;
   fg: string;
+  labelPos?: Button['labelPos'];
+  labelSize?: Button['labelSize'];
 }
 
 export function outputElapsed(out: ObsOutput, now: number): number {
@@ -102,18 +110,80 @@ function statsStatus(metric: StatMetric, stats: StatsState): ActionStatus {
   }
 }
 
-export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
+/** Whether this server can't run the action, or something inside it (a macro step, a toggle side). */
+function unavailable(action: Action, ctx: VisualCtx): boolean {
+  return withNested(action).some((a) => !actionSupported(a.type, ctx.platform) || (ACTION_META[a.type].needsCommands && !ctx.commands));
+}
+
+function timerStatus(action: ActionOf<'timer'>, ctx: VisualCtx, buttonId: string | undefined): ActionStatus {
+  const id = action.target ?? buttonId;
+  const definition = id ? timerDefinition(ctx.deck, id) : undefined;
+  if (action.target && !definition) return { active: false, missing: true, gauge: { text: '–' } };
+  const reading = timerReading(definition ?? action, id ? ctx.ext.timers[id] : undefined, ctx.now);
+  const text = formatClock(reading.seconds);
+  if (reading.done) return { active: false, alert: true, gauge: { text, level: 0, tone: 'hot' } };
+  const warm = reading.running && reading.left !== undefined && reading.seconds <= 10;
+  return { active: reading.running, gauge: { text, level: reading.left, tone: warm ? 'warm' : undefined } };
+}
+
+function counterStatus(action: ActionOf<'counter'>, ctx: VisualCtx, buttonId: string | undefined): ActionStatus {
+  const id = action.target ?? buttonId;
+  if (action.target && counterDefinitions(ctx.deck, action.target).length === 0) return { active: false, missing: true, gauge: { text: '–' } };
+  return { active: false, gauge: { text: String(id ? (ctx.ext.counters[id] ?? 0) : 0) } };
+}
+
+/** `buttonId`: the button the action belongs to (counters, timers, toggles and sounds keep their state per button). */
+const percent = (part = 0, total = 0) => (total > 0 ? (part / total) * 100 : 0);
+
+function obsStatsStatus(metric: ObsStatMetric, obs: ObsState): ActionStatus {
+  const stats = obs.stats;
+  const live = obs.stream.state === 'started' || obs.stream.state === 'reconnecting';
+  switch (metric) {
+    case 'bitrate': {
+      if (!live) return { active: false, disabled: true, gauge: { text: '–' } };
+      const kbps = obs.stream.bitrateKbps;
+      if (kbps === undefined) return { active: false, gauge: { text: '…' } };
+      const congestion = obs.stream.congestion ?? 0;
+      const tone = congestion >= 0.5 ? 'hot' : congestion >= 0.2 ? 'warm' : undefined;
+      const [text, detail] = kbps >= 1000 ? [(kbps / 1000).toFixed(1), 'Mbit/s'] : [String(Math.round(kbps)), 'kbit/s'];
+      return { active: false, gauge: { text, detail, tone } };
+    }
+    case 'dropped': {
+      if (!live) return { active: false, disabled: true, gauge: { text: '–' } };
+      const dropped = percent(obs.stream.skippedFrames, obs.stream.totalFrames);
+      return gauge(dropped, 5, `${dropped.toFixed(1)}%`, 1, 5, `${obs.stream.skippedFrames ?? 0} frames`);
+    }
+  }
+  if (!stats) return { active: false, gauge: { text: '–' } };
+  switch (metric) {
+    case 'fps':
+      return { active: false, gauge: { text: String(Math.round(stats.fps)) } };
+    case 'cpu':
+      return gauge(stats.cpu, 100, `${stats.cpu.toFixed(1)}%`, 50, 80);
+    case 'render': {
+      const lag = percent(stats.renderSkipped, stats.renderTotal);
+      return gauge(lag, 5, `${lag.toFixed(1)}%`, 0.5, 2, `${stats.renderSkipped} frames`);
+    }
+    case 'encode': {
+      const lag = percent(stats.outputSkipped, stats.outputTotal);
+      return gauge(lag, 5, `${lag.toFixed(1)}%`, 0.5, 2, `${stats.outputSkipped} frames`);
+    }
+  }
+}
+
+export function actionStatus(action: Action, ctx: VisualCtx, buttonId?: string): ActionStatus {
   const { obs, deck, ext, now } = ctx;
-  if (!actionSupported(action.type, ctx.platform)) return { active: false, disabled: true };
+  if (unavailable(action, ctx)) return { active: false, disabled: true };
   if (action.type.startsWith('obs.') && obs.connection !== 'connected') return { active: false, offline: true };
 
   switch (action.type) {
     case 'obs.scene': {
       const scene = resolveScene(obs, action.scene);
       if (!scene) return { active: false, missing: true };
-      if (scene.name === obs.programScene) return { active: true, ring: 'program' };
-      if (obs.studioMode && scene.name === obs.previewScene) return { active: false, ring: 'preview' };
-      return { active: false };
+      const image = action.preview ? ctx.thumbs?.[scene.name] : undefined;
+      if (scene.name === obs.programScene) return { active: true, ring: 'program', image };
+      if (obs.studioMode && scene.name === obs.previewScene) return { active: false, ring: 'preview', image };
+      return { active: false, image };
     }
     case 'obs.sceneItem': {
       const hit = resolveSceneItem(obs, action.scene, action.source);
@@ -141,7 +211,11 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     }
     case 'obs.volumeStep':
     case 'obs.media':
+    case 'obs.text':
+    case 'obs.browserRefresh':
       return resolveInput(obs, action.input) ? { active: false } : { active: false, missing: true };
+    case 'obs.stats':
+      return obsStatsStatus(action.metric, obs);
     case 'obs.stream':
       return outputStatus(obs.stream, 'LIVE', 'live', now);
     case 'obs.record': {
@@ -180,9 +254,25 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'macro':
     case 'system.hotkey':
     case 'kde.shortcut':
-      return { active: false };
     case 'system.command':
-      return { active: false, disabled: !ctx.commands };
+    case 'system.openUrl':
+    case 'system.text':
+      return { active: false };
+    case 'toggle':
+      return { active: !!buttonId && !!ext.toggles[buttonId] };
+    case 'counter':
+      return counterStatus(action, ctx, buttonId);
+    case 'timer':
+      return timerStatus(action, ctx, buttonId);
+    case 'clock': {
+      const date = new Date(now);
+      const detail = action.date ? date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : undefined;
+      return { active: false, gauge: { text: formatTimeOfDay(date, action), detail } };
+    }
+    case 'sound.play':
+      return { active: !!buttonId && ext.sounds.includes(soundKey(buttonId, action.sound)) };
+    case 'sound.stop':
+      return { active: ext.sounds.length > 0 };
     case 'system.stats':
       return statsStatus(action.metric, ext.stats);
     case 'system.volume': {
@@ -211,6 +301,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
     case 'deck.page':
       return { active: false, missing: !deck.pages.some((p) => p.id === action.pageId) };
     case 'deck.back':
+    case 'deck.pageStep':
       return { active: false };
   }
 }
@@ -218,7 +309,7 @@ export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
 /** `forceActive` lets the editor preview either look regardless of the live state. */
 export function buttonVisual(button: Button, ctx: VisualCtx, opts: { forceActive?: boolean } = {}): ButtonVisual {
   const action = button.tap ?? button.longPress;
-  const status: ActionStatus = action ? actionStatus(action, ctx) : { active: false };
+  const status: ActionStatus = action ? actionStatus(action, ctx, button.id) : { active: false };
   if (button.icon) status.image = undefined; // a chosen icon wins over cover art
   if (opts.forceActive !== undefined) {
     status.active = opts.forceActive;
@@ -229,6 +320,7 @@ export function buttonVisual(button: Button, ctx: VisualCtx, opts: { forceActive
   const baseIcon = button.icon ?? (action ? actionIcon(action) : undefined);
   const bg = button.bg ?? COLORS.bg;
   const fg = button.fg ?? COLORS.fg;
+  Object.assign(status, { labelPos: button.labelPos, labelSize: button.labelSize });
   if (!status.active) return { ...status, label: baseLabel, icon: baseIcon, bg, fg };
 
   // A custom base icon wins over the action's default active icon; state then shows through color.

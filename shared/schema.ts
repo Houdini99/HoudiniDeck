@@ -1,10 +1,11 @@
 // Single source of truth for persisted data (deck, settings) and client→server messages.
 // The server validates with these zod schemas; the browser only imports the inferred types.
 import { z } from 'zod';
-import { actionBehavior } from './actions-meta.ts';
-import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
+import { behaviorOf } from './actions-meta.ts';
+import { DEFAULT_OBS_URL, ICON_NAME_RE, ICON_SETS, LIMITS, SOUND_NAME_RE, UPLOAD_NAME_RE, parseSlot } from './deck-utils.ts';
 import { STAT_METRICS } from './ext-types.ts';
 import { KEY_NAMES } from './keys.ts';
+import { OBS_STAT_METRICS } from './obs-types.ts';
 
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, 'Invalid id');
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colors must look like #rrggbb');
@@ -28,6 +29,9 @@ const HeaderValue = z
   .string()
   .max(4000)
   .regex(/^[\t\x20-\x7e\x80-\xff]*$/, 'Header values must be one line of plain text');
+const WebUrl = z.url({ protocol: /^https?$/, message: 'Use an http:// or https:// URL' }).max(2000);
+/** What Counter and Timer buttons write into an OBS text source ({n} or {time} marks the number). */
+const TextFormat = z.string().max(500);
 
 /** Everything a button can do except macros and page navigation; these can also be macro steps. */
 const StepActionSchema = z.discriminatedUnion('type', [
@@ -35,6 +39,8 @@ const StepActionSchema = z.discriminatedUnion('type', [
     type: z.literal('obs.scene'),
     scene: ObsRefSchema,
     target: z.enum(['auto', 'program', 'preview']).default('auto'),
+    /** Show a live picture of the scene on the button. */
+    preview: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('obs.sceneItem'),
@@ -77,10 +83,16 @@ const StepActionSchema = z.discriminatedUnion('type', [
     input: ObsRefSchema,
     action: z.enum(['playPause', 'play', 'pause', 'restart', 'stop', 'next', 'previous']),
   }),
+  /** Replace the text of a text source (Text GDI+ / FreeType 2). */
+  z.object({ type: z.literal('obs.text'), input: ObsRefSchema, text: z.string().max(10_000).default('') }),
+  /** Shows how OBS is doing (a display, like the system stats tiles). */
+  z.object({ type: z.literal('obs.stats'), metric: z.enum(OBS_STAT_METRICS).default('dropped') }),
+  /** Reload a browser source without its cache (e.g. stuck alerts). */
+  z.object({ type: z.literal('obs.browserRefresh'), input: ObsRefSchema }),
   z.object({
     type: z.literal('http.request'),
     method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('POST'),
-    url: z.url({ protocol: /^https?$/, message: 'Use an http:// or https:// URL' }).max(2000),
+    url: WebUrl,
     headers: z
       .record(HeaderName, HeaderValue)
       .refine((h) => Object.keys(h).length <= 20, 'At most 20 headers')
@@ -124,6 +136,57 @@ const StepActionSchema = z.discriminatedUnion('type', [
     /** Its friendly name, shown as the default label. */
     title: z.string().max(200).optional(),
   }),
+  /** Type text into whatever window has focus (Windows: as typed characters; Linux: pasted). */
+  z.object({
+    type: z.literal('system.text'),
+    text: z.string().min(1, 'Type some text').max(2000),
+    /** Press Enter afterwards (e.g. to send a chat message). */
+    enter: z.boolean().optional(),
+  }),
+  /** Open a web page in the PC's default browser. */
+  z.object({ type: z.literal('system.openUrl'), url: WebUrl }),
+  z.object({
+    type: z.literal('sound.play'),
+    /** An uploaded sound (data/uploads/<hash>.mp3 or .wav). */
+    sound: z.string().regex(SOUND_NAME_RE, 'Upload a sound (MP3 or WAV)'),
+    /** The file's name when it was uploaded, for the label. */
+    name: z.string().max(200).optional(),
+    /** Percent of full volume (default 100). */
+    volume: z.number().int().min(1).max(100).optional(),
+    /** A press while it plays: stops it (toggle), starts it over (restart), or plays it once more on top (overlap). */
+    mode: z.enum(['toggle', 'restart', 'overlap']).default('toggle'),
+  }),
+  /** Stop every sound the deck plays. */
+  z.object({ type: z.literal('sound.stop') }),
+  z.object({
+    type: z.literal('counter'),
+    mode: z.enum(['add', 'set']).default('add'),
+    /** add: how much to add (negative subtracts); default 1. */
+    step: z.number().int().min(-1_000_000).max(1_000_000).optional(),
+    /** set: the new count; default 0. */
+    value: z.number().int().min(-1_000_000_000).max(1_000_000_000).optional(),
+    /** Change (and show) another Counter button's count instead of this button's own, e.g. from a macro. */
+    target: Id.optional(),
+    /** Also write the count into this OBS text source. */
+    textSource: ObsRefSchema.optional(),
+    /** What the text source shows; {n} becomes the count. Default "{n}". */
+    textFormat: TextFormat.optional(),
+  }),
+  z.object({
+    type: z.literal('timer'),
+    /** toggle: start or pause (a finished countdown starts over); restart: from the beginning; reset: stop at the beginning. */
+    mode: z.enum(['toggle', 'restart', 'reset']).default('toggle'),
+    /** Count down from this many seconds; without it, count up like a stopwatch. */
+    durationSec: z.number().int().min(1).max(359_999).optional(),
+    /** Control (and show) another Timer button instead of this button's own, e.g. from a macro. */
+    target: Id.optional(),
+    /** Also write the time into this OBS text source, every second while it runs. */
+    textSource: ObsRefSchema.optional(),
+    /** What the text source shows; {time} becomes the time. Default "{time}". */
+    textFormat: TextFormat.optional(),
+    /** What the text source shows once a countdown is done (default: the format with 0:00). */
+    doneText: TextFormat.optional(),
+  }),
   z.object({
     type: z.literal('system.command'),
     /** Run with `sh -c` in the home folder. */
@@ -141,27 +204,51 @@ const MacroStepSchema = z.union([
   z.object({ delayMs: z.number().int().min(0).max(60_000) }),
 ]);
 
+const MacroSchema = z.object({
+  type: z.literal('macro'),
+  steps: z
+    .array(MacroStepSchema)
+    .min(1, 'Add at least one step')
+    .max(MAX_MACRO_STEPS)
+    .superRefine((steps, ctx) => {
+      steps.forEach((step, i) => {
+        if ('action' in step && behaviorOf(step.action) !== 'press') {
+          ctx.addIssue({ code: 'custom', message: `Step ${i + 1}: push-to-talk, faders and displays can’t be macro steps`, path: [i] });
+        }
+      });
+    }),
+  /** Skip the remaining steps after one fails (otherwise keep going and report at the end). */
+  stopOnError: z.boolean().default(true),
+});
+
+/** What a Toggle button runs on a press: a step action (see above) or a macro. */
+const ToggleSideSchema = z
+  .discriminatedUnion('type', [...StepActionSchema.options, MacroSchema])
+  .refine((action) => behaviorOf(action) === 'press', 'Push-to-talk, faders and displays can’t be part of a toggle');
+
 export const ActionSchema = z.discriminatedUnion('type', [
   ...StepActionSchema.options,
+  MacroSchema,
   z.object({
-    type: z.literal('macro'),
-    steps: z
-      .array(MacroStepSchema)
-      .min(1, 'Add at least one step')
-      .max(MAX_MACRO_STEPS)
-      .superRefine((steps, ctx) => {
-        steps.forEach((step, i) => {
-          if ('action' in step && actionBehavior(step.action) !== 'press') {
-            ctx.addIssue({ code: 'custom', message: `Step ${i + 1}: push-to-talk and faders can’t be macro steps`, path: [i] });
-          }
-        });
-      }),
-    /** Skip the remaining steps after one fails (otherwise keep going and report at the end). */
-    stopOnError: z.boolean().default(true),
+    type: z.literal('toggle'),
+    /** Runs on the first press; the button then shows as on. */
+    on: ToggleSideSchema,
+    /** Runs on the next press; the button shows as off again. */
+    off: ToggleSideSchema,
+  }),
+  /** Shows the time of day (a display, like the stats tiles). */
+  z.object({
+    type: z.literal('clock'),
+    seconds: z.boolean().optional(),
+    hour12: z.boolean().optional(),
+    /** Show the date under the time. */
+    date: z.boolean().optional(),
   }),
   // Navigation actions never reach the server's executors; the browser handles them.
   z.object({ type: z.literal('deck.page'), pageId: Id }),
   z.object({ type: z.literal('deck.back') }),
+  /** The next or previous page in the tab order (wrapping around). */
+  z.object({ type: z.literal('deck.pageStep'), direction: z.enum(['next', 'previous']).default('next') }),
 ]);
 
 export const IconRefSchema = z.union([
@@ -184,6 +271,9 @@ export const ButtonSchema = z.object({
   bg: Color.optional(),
   fg: Color.optional(),
   hideLabel: z.boolean().optional(),
+  /** Where the label goes (default bottom) and how big it is (default normal). */
+  labelPos: z.enum(['bottom', 'top', 'middle']).optional(),
+  labelSize: z.enum(['small', 'large']).optional(),
   /** Overrides used while the button's state is "active" (live, muted, visible, …). */
   active: AppearanceSchema.optional(),
   tap: ActionSchema.optional(),
@@ -259,17 +349,23 @@ export const DeckOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('page.update'), pageId: Id, name: PageName.optional(), rows: Rows.optional(), cols: Cols.optional() }),
   z.object({ op: z.literal('page.delete'), pageId: Id }),
   z.object({ op: z.literal('page.move'), pageId: Id, toIndex: z.number().int().min(0) }),
+  /** A copy of the page and its buttons, right after it. */
+  z.object({ op: z.literal('page.duplicate'), pageId: Id }),
   z.object({ op: z.literal('button.set'), pageId: Id, slot: Slot, button: NewButtonSchema.nullable() }),
   z.object({
     op: z.literal('button.move'),
     from: z.object({ pageId: Id, slot: Slot }),
     to: z.object({ pageId: Id, slot: Slot.optional() }),
   }),
-  z.object({ op: z.literal('button.duplicate'), pageId: Id, slot: Slot }),
+  /** A copy in the first free slot of the same page, or of `toPageId`. */
+  z.object({ op: z.literal('button.duplicate'), pageId: Id, slot: Slot, toPageId: Id.optional() }),
   z.object({ op: z.literal('folder.create'), pageId: Id, slot: Slot, name: PageName }),
   z.object({ op: z.literal('deck.setHome'), pageId: Id }),
   z.object({ op: z.literal('deck.import'), deck: z.unknown() }),
   z.object({ op: z.literal('deck.generateStarter'), name: PageName.optional() }),
+  /** Take back the last edit (anyone's), or redo one that was taken back. */
+  z.object({ op: z.literal('deck.undo') }),
+  z.object({ op: z.literal('deck.redo') }),
 ]);
 
 export const ClientMsgSchema = z.discriminatedUnion('t', [
@@ -284,12 +380,16 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
   /** The stats tiles this browser shows (polled only while someone looks at them). */
   z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),
+  /** The scenes whose live pictures this browser shows. */
+  z.object({ t: z.literal('thumbs'), scenes: z.array(z.string().max(200)).max(32) }),
 ]);
 
 export type ObsRef = z.infer<typeof ObsRefSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type StepAction = z.infer<typeof StepActionSchema>;
 export type MacroStep = z.infer<typeof MacroStepSchema>;
+export type MacroAction = z.infer<typeof MacroSchema>;
+export type ToggleSide = z.infer<typeof ToggleSideSchema>;
 export type ActionType = Action['type'];
 export type ActionOf<T extends ActionType> = Extract<Action, { type: T }>;
 export type IconRef = z.infer<typeof IconRefSchema>;

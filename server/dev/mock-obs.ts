@@ -64,6 +64,9 @@ interface MockInput {
   muted: boolean;
   volumeMul: number;
   mediaState?: string;
+  settings: Record<string, unknown>;
+  /** How often a browser source's "refresh cache" button was pressed. */
+  refreshes?: number;
 }
 interface MockOutput {
   active: boolean;
@@ -110,6 +113,7 @@ export function createMockState(): MockState {
     caps,
     muted: false,
     volumeMul: 1,
+    settings: kind.startsWith('text_') ? { text: name } : kind === 'browser_source' ? { url: 'https://example.com/' } : {},
     ...extra,
   });
   return {
@@ -335,6 +339,23 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
     GetInputList: () => ({
       inputs: state.inputs.map((i) => ({ inputName: i.name, inputUuid: i.uuid, inputKind: i.kind, unversionedInputKind: i.kind, inputKindCaps: i.caps })),
     }),
+    GetInputSettings: (d) => {
+      const input = findInput(d.inputName);
+      return { inputSettings: input.settings, inputKind: input.kind };
+    },
+    SetInputSettings: (d) => {
+      const input = findInput(d.inputName);
+      if (!d.inputSettings || typeof d.inputSettings !== 'object') throw new RequestError(Status.MissingRequestField, 'Your request is missing the `inputSettings` field.');
+      input.settings = d.overlay === false ? { ...d.inputSettings } : { ...input.settings, ...d.inputSettings };
+      emit('InputSettingsChanged', { inputName: input.name, inputUuid: input.uuid, inputSettings: input.settings }, Intent.Inputs);
+    },
+    PressInputPropertiesButton: (d) => {
+      const input = findInput(d.inputName);
+      if (input.kind !== 'browser_source' || !['refreshnocache', 'refresh'].includes(d.propertyName)) {
+        throw new RequestError(Status.ResourceNotFound, 'Unable to find a property by that name.');
+      }
+      input.refreshes = (input.refreshes ?? 0) + 1;
+    },
     GetInputMute: (d) => ({ inputMuted: audioInput(d.inputName).muted }),
     SetInputMute: (d) => setMute(audioInput(d.inputName), !!d.inputMuted),
     ToggleInputMute: (d) => {
@@ -363,9 +384,10 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
       outputTimecode: '00:00:00.000',
       outputDuration: duration(state.stream),
       outputCongestion: 0,
-      outputBytes: 0,
-      outputSkippedFrames: 0,
-      outputTotalFrames: 0,
+      // About 6000 kbit/s, and now and then a dropped frame.
+      outputBytes: Math.round(duration(state.stream) * (740 + Math.random() * 20)),
+      outputSkippedFrames: Math.floor(duration(state.stream) / 20_000),
+      outputTotalFrames: Math.floor((duration(state.stream) / 1000) * 60),
     }),
     StartStream: () => setOutput('stream', true),
     StopStream: () => setOutput('stream', false),
@@ -481,6 +503,19 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
     },
     SaveSourceScreenshot: (d) => {
       findScene(d.sourceName);
+    },
+    // Real OBS sends a JPEG or PNG of the source; the mock draws its name and the time instead.
+    GetSourceScreenshot: (d) => {
+      const name = String(d.sourceName);
+      if (!state.scenes.some((s) => s.name === name) && !state.inputs.some((i) => i.name === name)) findScene(name);
+      const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+      const escape = (t: string) => t.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">` +
+        `<rect width="320" height="180" fill="hsl(${hue} 45% 30%)"/><circle cx="${40 + ((Date.now() / 1000) % 10) * 24}" cy="140" r="14" fill="hsl(${hue} 70% 65%)"/>` +
+        `<text x="160" y="80" fill="#fff" font-family="sans-serif" font-size="30" text-anchor="middle">${escape(name)}</text>` +
+        `<text x="160" y="112" fill="#fff" opacity="0.7" font-family="sans-serif" font-size="18" text-anchor="middle">${new Date().toLocaleTimeString()}</text></svg>`;
+      return { imageData: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` };
     },
     GetMediaInputStatus: (d) => ({ mediaState: findInput(d.inputName).mediaState ?? 'OBS_MEDIA_STATE_NONE', mediaDuration: 60_000, mediaCursor: 0 }),
     TriggerMediaInputAction: (d) => {

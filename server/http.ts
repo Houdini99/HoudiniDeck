@@ -4,6 +4,10 @@ import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { LabelCtx } from '../shared/actions-meta.ts';
+import type { Deck } from '../shared/schema.ts';
+import type { Dispatcher } from './actions/dispatch.ts';
+import { registerButtonApi } from './api.ts';
 import type { Env } from './env.ts';
 import type { Hub } from './hub.ts';
 import { registerIconRoutes } from './icons.ts';
@@ -19,6 +23,10 @@ export interface HttpDeps {
   bridge: ObsBridge;
   media: MediaSource;
   settingsStore: SettingsStore;
+  /** For pressing buttons through the HTTP API. */
+  dispatcher: Pick<Dispatcher, 'press'>;
+  getDeck: () => Deck;
+  labelCtx: () => LabelCtx;
   log: Logger;
 }
 
@@ -42,6 +50,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   registerIconRoutes(app);
   registerUploadRoutes(app, { dataDir: env.dataDir, settingsStore });
   registerMediaRoutes(app, media);
+  await registerButtonApi(app, { getDeck: deps.getDeck, dispatcher: deps.dispatcher, settingsStore, labelCtx: deps.labelCtx, log });
   app.get('/api/health', async () => ({ ok: true, obs: bridge.state.connection, clients: hub.connectedCount }));
 
   if (existsSync(join(env.webDist, 'index.html'))) {

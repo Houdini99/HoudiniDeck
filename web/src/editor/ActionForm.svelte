@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { REF_KINDS, actionMeta, visibleFields, type FieldDef } from '$shared/actions-meta.ts';
-  import { prettyHotkey } from '$shared/format.ts';
+  import { REF_KINDS, actionAutoLabel, actionMeta, visibleFields, type FieldDef } from '$shared/actions-meta.ts';
+  import { counterDefinitions, timerDefinition } from '$shared/deck-utils.ts';
+  import { formatClock, parseClock, prettyHotkey } from '$shared/format.ts';
   import { resolveSceneOrGroupName, resolveSourceName } from '$shared/obs-resolve.ts';
-  import { MEDIA_INPUT_KINDS } from '$shared/obs-types.ts';
+  import { BROWSER_INPUT_KIND, MEDIA_INPUT_KINDS, isTextInputKind } from '$shared/obs-types.ts';
   import type { KdeComponent } from '$shared/protocol.ts';
-  import type { Action, MacroStep, ObsRef } from '$shared/schema.ts';
+  import type { Action, MacroStep, ObsRef, ToggleSide } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
+  import ActionField from './ActionField.svelte';
   import HeadersField from './HeadersField.svelte';
   import KeysField from './KeysField.svelte';
   import MacroSteps from './MacroSteps.svelte';
+  import SoundField from './SoundField.svelte';
 
   // Fields are generated from the action's metadata; OBS pickers read the live mirror.
   let { action = $bindable() }: { action: Action } = $props();
@@ -58,11 +61,29 @@
 
   const refOption = (name: string, uuid?: string, suffix = ''): Option => ({ value: name, label: name + suffix, uuid });
 
+  /** Buttons whose own counter (or timer) this action can point at; not the button being edited. */
+  function targetButtons(): Option[] {
+    const deck = store.deck;
+    if (!deck) return [];
+    const editing = store.editing && deck.pages.find((p) => p.id === store.editing!.pageId)?.buttons[store.editing.slot]?.id;
+    const own = (id: string) => (action.type === 'timer' ? !!timerDefinition(deck, id) : counterDefinitions(deck, id).length > 0);
+    return deck.pages.flatMap((page) =>
+      Object.values(page.buttons)
+        .filter((b) => b.id !== editing && own(b.id))
+        .map((b) => {
+          const shown = b.tap ?? b.longPress;
+          const name = b.label || (shown ? actionAutoLabel(shown, { obs: store.obs ?? undefined, deck, ext: store.ext }) : '') || 'Unnamed';
+          return { value: b.id, label: `${page.name} › ${name}` };
+        }),
+    );
+  }
+
   function options(field: FieldDef): Option[] {
     if (field.options) return field.options;
     const obs = store.obs;
     const deck = store.deck;
     if (field.kind === 'page') return (deck?.pages ?? []).map((p) => ({ value: p.id, label: p.name }));
+    if (field.kind === 'targetButton') return targetButtons();
     if (field.kind === 'mediaPlayer') return (players ?? []).map((p) => ({ value: p, label: p }));
     if (field.kind === 'kdeComponent') return (kde ?? []).map((c) => ({ value: c.id, label: c.name }));
     if (field.kind === 'kdeShortcut') {
@@ -88,6 +109,10 @@
         const media = inputs.filter((i) => MEDIA_INPUT_KINDS.includes(i.kind));
         return (media.length ? media : inputs).map((i) => refOption(i.name, i.uuid));
       }
+      case 'textInput':
+        return inputs.filter((i) => isTextInputKind(i.kind)).map((i) => refOption(i.name, i.uuid));
+      case 'browserInput':
+        return inputs.filter((i) => i.kind === BROWSER_INPUT_KIND).map((i) => refOption(i.name, i.uuid));
       case 'filterSource':
         return [...inputs.map((i) => refOption(i.name, i.uuid)), ...obs.scenes.map((s) => refOption(s.name, s.uuid, ' (scene)'))].filter(
           (o) => (obs.filters[o.value]?.length ?? 0) > 0,
@@ -141,6 +166,17 @@
     (action as unknown as Record<string, unknown>)[field.key] = value;
   }
 
+  /** Durations are typed as m:ss (or h:mm:ss) and stored in seconds. */
+  function setDuration(field: FieldDef, input: HTMLInputElement): void {
+    const text = input.value.trim();
+    const seconds = parseClock(text);
+    if (text === '' && field.optional) setRaw(field, undefined);
+    else if (seconds && seconds >= (field.min ?? 1) && seconds <= (field.max ?? 359_999)) setRaw(field, seconds);
+    input.value = durationText(values[field.key]); // tidy it up, or undo a typo
+  }
+
+  const durationText = (v: unknown) => (typeof v === 'number' ? formatClock(v) : '');
+
   /** A text box for a field whose choices depend on another one, while there's nothing to choose. */
   function locked(field: FieldDef, opts: Option[]): boolean {
     if (!field.dependsOn || opts.length > 0 || field.kind === 'text') return false;
@@ -174,6 +210,23 @@
       {@render title(field)}
       <MacroSteps bind:steps={() => values[field.key] as MacroStep[], (v) => setRaw(field, v)} />
     </div>
+  {:else if field.kind === 'action'}
+    <div class="field">
+      {@render title(field)}
+      <ActionField bind:action={() => values[field.key] as ToggleSide, (v) => setRaw(field, v)} />
+    </div>
+  {:else if field.kind === 'sound'}
+    <div class="field">
+      {@render title(field)}
+      <SoundField
+        sound={(values[field.key] as string | undefined) ?? ''}
+        name={values.name as string | undefined}
+        onchange={(sound, name) => {
+          setRaw(field, sound);
+          (action as unknown as Record<string, unknown>).name = name;
+        }}
+      />
+    </div>
   {:else if field.kind === 'keys'}
     <div class="field">
       {@render title(field)}
@@ -198,6 +251,15 @@
           {value}
           oninput={(e) => setValue(field, e.currentTarget.value, opts)}
         />
+      {:else if field.kind === 'duration'}
+        <input
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          value={durationText(values[field.key])}
+          placeholder={field.placeholder}
+          onchange={(e) => setDuration(field, e.currentTarget)}
+        />
       {:else if field.kind === 'url'}
         <input
           type="url"
@@ -217,7 +279,7 @@
           placeholder={field.placeholder}
           onchange={(e) => setValue(field, e.currentTarget.value, opts)}
         ></textarea>
-      {:else if field.kind === 'text' || (opts.length === 0 && field.kind !== 'select')}
+      {:else if field.kind === 'text' || (opts.length === 0 && field.kind !== 'select' && field.kind !== 'targetButton')}
         <input
           type="text"
           {value}
@@ -233,7 +295,7 @@
             <option value="" disabled>Choose…</option>
           {/if}
           {#if value && !opts.some((o) => o.value === value)}
-            <option {value}>{value} ({field.kind === 'mediaPlayer' ? 'not running' : 'not found'})</option>
+            <option {value}>{field.kind === 'targetButton' ? 'A deleted button' : value} ({field.kind === 'mediaPlayer' ? 'not running' : 'not found'})</option>
           {/if}
           {#each opts as o (o.value)}
             <option value={o.value}>{o.label}</option>

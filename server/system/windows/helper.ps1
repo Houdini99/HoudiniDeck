@@ -1,5 +1,6 @@
-# The deck's helper on Windows: the default speakers and microphone (Core Audio), key presses
-# (SendInput) and media players (the media sessions Windows shows next to its volume slider).
+# The deck's helper on Windows: the default speakers and microphone (Core Audio), key presses and
+# typed text (SendInput), media players (the media sessions Windows shows next to its volume slider) and
+# sound clips for Play Sound buttons (winmm's MCI).
 # The server starts one copy (see helper.ts) and talks to it in JSON lines: requests on stdin,
 # answers and media updates on stdout.
 #
@@ -157,7 +158,8 @@ namespace HoudiniDeck
         [DllImport("user32.dll", SetLastError = true)]
         static extern uint SendInput(uint count, INPUT[] inputs, int size);
 
-        const uint INPUT_KEYBOARD = 1, KEYEVENTF_EXTENDEDKEY = 1, KEYEVENTF_KEYUP = 2, KEYEVENTF_SCANCODE = 8;
+        const uint INPUT_KEYBOARD = 1, KEYEVENTF_EXTENDEDKEY = 1, KEYEVENTF_KEYUP = 2, KEYEVENTF_UNICODE = 4, KEYEVENTF_SCANCODE = 8;
+        const ushort VK_TAB = 0x09, VK_RETURN = 0x0D;
 
         // events: [scan code, extended (0/1), virtual-key code (0: none), up (0/1)] for each key event.
         // Without a virtual-key code the key goes by its scan code, which Windows maps through the
@@ -183,6 +185,97 @@ namespace HoudiniDeck
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
             }
+        }
+
+        // Types text as characters (not keys), so the keyboard layout doesn't matter: every character,
+        // accents and emoji included, arrives as it is. New lines become Enter and tabs Tab.
+        public static void Type(string text, bool enter, int gapMs)
+        {
+            foreach (char c in text)
+            {
+                if (c == '\r') continue;
+                if (c == '\n' || c == '\t') Tap(c == '\n' ? VK_RETURN : VK_TAB, 0, 0);
+                else Tap(0, c, KEYEVENTF_UNICODE);
+                if (gapMs > 0) Thread.Sleep(gapMs);
+            }
+            if (enter) Tap(VK_RETURN, 0, 0);
+        }
+
+        static void Tap(ushort vk, ushort scan, uint flags)
+        {
+            INPUT[] inputs = new INPUT[2];
+            for (int i = 0; i < 2; i++)
+            {
+                inputs[i].type = INPUT_KEYBOARD;
+                inputs[i].u.ki.wVk = vk;
+                inputs[i].u.ki.wScan = scan;
+                inputs[i].u.ki.dwFlags = i == 0 ? flags : flags | KEYEVENTF_KEYUP;
+            }
+            if (SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) != 2)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        }
+    }
+
+    // Sound clips (MP3, WAV) through MCI, each opened under its own alias so several can play at once.
+    public static class Sound
+    {
+        [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+        static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr callback);
+
+        [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+        static extern bool mciGetErrorString(int error, StringBuilder text, int length);
+
+        static string Send(string command)
+        {
+            StringBuilder result = new StringBuilder(256);
+            int error = mciSendString(command, result, result.Capacity, IntPtr.Zero);
+            if (error != 0)
+            {
+                StringBuilder text = new StringBuilder(256);
+                if (!mciGetErrorString(error, text, text.Capacity)) text.Append("MCI error " + error);
+                throw new InvalidOperationException(text.ToString());
+            }
+            return result.ToString();
+        }
+
+        // Opens the file and starts it; returns its length in ms (0 when MCI can't tell). volume: 0..1000.
+        public static int Play(string alias, string path, int volume)
+        {
+            Send("open \"" + path + "\" type mpegvideo alias " + alias);
+            try
+            {
+                Send("set " + alias + " time format milliseconds");
+                Send("setaudio " + alias + " volume to " + Math.Max(0, Math.Min(1000, volume)));
+                int length;
+                if (!int.TryParse(Send("status " + alias + " length"), out length)) length = 0;
+                Send("play " + alias);
+                return length;
+            }
+            catch
+            {
+                Close(alias);
+                throw;
+            }
+        }
+
+        public static bool Playing(string alias)
+        {
+            try
+            {
+                return Send("status " + alias + " mode") == "playing";
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        // Stops the sound and frees it; nothing happens if it is closed already.
+        public static void Close(string alias)
+        {
+            mciSendString("close " + alias, null, 0, IntPtr.Zero);
         }
     }
 
@@ -363,6 +456,24 @@ function Invoke-Request($request) {
     }
     'keys' {
       [HoudiniDeck.Keys]::Send([int[]]@($request.events), 10, 50)
+      return $null
+    }
+    'text' {
+      [HoudiniDeck.Keys]::Type([string]$request.text, [bool]$request.enter, 2)
+      return $null
+    }
+    'sound.play' {
+      # The alias and path become part of an MCI command string, so only safe ones get this far.
+      $alias = [string]$request.alias
+      $path = [string]$request.path
+      if ($alias -notmatch '^[A-Za-z0-9]{1,32}$') { throw "Bad sound name: $alias" }
+      if ($path.Contains('"') -or -not [IO.File]::Exists($path)) { throw "Sound file not found: $path" }
+      return @{ lengthMs = [HoudiniDeck.Sound]::Play($alias, $path, [int]$request.volume) }
+    }
+    'sound.playing' { return [HoudiniDeck.Sound]::Playing([string]$request.alias) }
+    'sound.close' {
+      $alias = [string]$request.alias
+      if ($alias -match '^[A-Za-z0-9]{1,32}$') { [HoudiniDeck.Sound]::Close($alias) }
       return $null
     }
     'media.state' { return Get-MediaState $false }

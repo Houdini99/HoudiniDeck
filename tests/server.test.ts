@@ -1,7 +1,9 @@
 // End-to-end: real server on a random port, talking to the mock OBS, driven over WebSocket/HTTP.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { WebSocket } from 'ws';
 import { startApp, type App } from '../server/app.ts';
@@ -314,4 +316,154 @@ test('stats tiles on screen get live CPU and memory readings', async () => {
   assert.ok(msg.ext.stats.memory!.used > 0 && msg.ext.stats.memory!.used < msg.ext.stats.memory!.total);
   c.ws.close();
   await waitFor(() => Object.keys(app.ext.state.stats).length === 0, 3000, 'readings stop when no one looks');
+});
+
+test('counters, toggles and timers live on the server; OBS text sources follow them', async () => {
+  const c = connect(`localhost:${app.port}`);
+  await c.next('init');
+  const added = await c.request({ t: 'op', op: { op: 'page.add', name: 'Tools', rows: 2, cols: 5 } });
+  assert.equal(added.ok, true);
+  const pageId = ((added.ok && added.data) as { pageId: string }).pageId;
+  const put = async (slot: string, button: Record<string, unknown>) => {
+    const res = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot, button } });
+    assert.equal(res.ok, true, res.ok ? '' : res.error);
+    return ((res.ok && res.data) as { buttonId: string }).buttonId;
+  };
+  const press = (buttonId: string, which = 'tap') => c.ws.send(JSON.stringify({ t: 'press', pageId, buttonId, which }));
+  const text = (name: string) => mock.state.inputs.find((i) => i.name === name)!.settings.text;
+  const ext = () => c.messages.findLast((m): m is Extract<ServerMsg, { t: 'ext' }> => m.t === 'ext')?.ext;
+
+  const counter = await put('0-0', {
+    tap: { type: 'counter', mode: 'add', textSource: { name: 'BRB Text' }, textFormat: 'Deaths: {n}' },
+    longPress: { type: 'counter', mode: 'set' },
+  });
+  press(counter);
+  press(counter);
+  await waitFor(() => ext()?.counters[counter] === 2, 3000, 'the count in a broadcast');
+  await waitFor(() => text('BRB Text') === 'Deaths: 2', 3000, 'the text source');
+  press(counter, 'longPress');
+  await waitFor(() => text('BRB Text') === 'Deaths: 0', 3000, 'reset');
+
+  const toggle = await put('0-1', {
+    tap: {
+      type: 'toggle',
+      on: { type: 'obs.text', input: { name: 'Countdown' }, text: 'Lights on' },
+      off: { type: 'obs.text', input: { name: 'Countdown' }, text: 'Lights off' },
+    },
+  });
+  press(toggle);
+  await waitFor(() => text('Countdown') === 'Lights on' && ext()?.toggles[toggle] === true, 3000, 'toggled on');
+  press(toggle);
+  await waitFor(() => text('Countdown') === 'Lights off' && !ext()?.toggles[toggle], 3000, 'toggled off');
+
+  const timer = await put('0-2', { tap: { type: 'timer', mode: 'toggle', durationSec: 90, textSource: { name: 'Countdown' }, textFormat: 'Back in {time}' } });
+  await waitFor(() => text('Countdown') === 'Back in 1:30', 3000, 'a new timer shows its full time');
+  press(timer);
+  await waitFor(() => ext()?.timers[timer]?.startedAt !== undefined, 3000, 'running');
+
+  const refresh = await put('0-3', { tap: { type: 'obs.browserRefresh', input: { name: 'Alerts' } } });
+  press(refresh);
+  await waitFor(() => mock.state.inputs.find((i) => i.name === 'Alerts')!.refreshes === 1, 3000, 'browser source refreshed');
+
+  await app.states.flush();
+  const saved = JSON.parse(await readFile(join(app.deckStore.path, '..', 'button-state.json'), 'utf8'));
+  assert.equal(saved.counters[counter], 0);
+  assert.equal(saved.timers[timer].elapsedMs, 0);
+  c.ws.close();
+});
+
+test('undo and redo over the WebSocket, with the history sent to every browser', async () => {
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  assert.equal(typeof init.history, 'object');
+  const pageId = init.deck.pages[0].id;
+  const set = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot: '2-4', button: { label: 'Undo me' } } });
+  assert.equal(set.ok, true);
+  const from = c.messages.length;
+  assert.equal((await c.request({ t: 'op', op: { op: 'deck.undo' } })).ok, true);
+  const undone = await c.next('deck', from);
+  assert.equal(undone.deck.pages[0].buttons['2-4']?.label, undefined);
+  assert.equal(undone.history.redo, 'button change');
+  assert.equal((await c.request({ t: 'op', op: { op: 'deck.redo' } })).ok, true);
+  assert.equal(app.deckStore.deck.pages[0].buttons['2-4']?.label, 'Undo me');
+  c.ws.close();
+});
+
+test('MP3 and WAV sounds can be uploaded and are served as audio', async () => {
+  const wav = Buffer.concat([Buffer.from('RIFF\x24\x00\x00\x00WAVEfmt ', 'latin1'), Buffer.alloc(32)]);
+  const boundary = '----vsdsound';
+  const res = await app.http.inject({
+    method: 'POST',
+    url: '/api/uploads',
+    headers: { host: `localhost:${app.port}`, 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="horn.wav"\r\nContent-Type: audio/wav\r\n\r\n`),
+      wav,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+  });
+  assert.equal(res.statusCode, 200);
+  const { file } = res.json() as { file: string };
+  assert.match(file, /^[a-f0-9]{16}\.wav$/);
+  const served = await app.http.inject({ method: 'GET', url: `/uploads/${file}` });
+  assert.equal(served.headers['content-type'], 'audio/wav');
+  assert.equal((await app.http.inject({ method: 'GET', url: '/uploads/aaaaaaaaaaaaaaaa.ogg' })).statusCode, 404);
+});
+
+test('other programs can press buttons over HTTP with the access key', async () => {
+  const c = connect(`localhost:${app.port}`);
+  await c.next('init');
+  const added = await c.request({ t: 'op', op: { op: 'page.add', name: 'API', rows: 1, cols: 4 } });
+  const pageId = ((added.ok && added.data) as { pageId: string }).pageId;
+  const put = async (slot: string, button: Record<string, unknown>) => {
+    const res = await c.request({ t: 'op', op: { op: 'button.set', pageId, slot, button } });
+    return ((res.ok && res.data) as { buttonId: string }).buttonId;
+  };
+  const counter = await put('0-0', { label: 'Wins', tap: { type: 'counter', mode: 'add' }, longPress: { type: 'counter', mode: 'set', value: 10 } });
+  const ptt = await put('0-1', { tap: { type: 'obs.mute', input: { name: 'Mic/Aux' }, mode: 'pushToTalk' } });
+  const broken = await put('0-2', { tap: { type: 'obs.scene', scene: { name: 'No Such Scene' }, target: 'auto' } });
+  c.ws.close();
+
+  const lan = { host: '192.168.1.20:3325' };
+  const key = { ...lan, authorization: `Bearer ${app.settingsStore.settings.accessKey}` };
+  const press = (id: string, headers: Record<string, string>, query = '') =>
+    app.http.inject({ method: 'POST', url: `/api/buttons/${id}/press${query}`, headers });
+
+  assert.equal((await press(counter, lan)).statusCode, 401, 'LAN callers need the key');
+  assert.equal((await press(counter, { ...key, origin: 'http://evil.example' })).statusCode, 403, 'other websites are refused');
+  const ok = await press(counter, { ...key, 'content-type': 'application/json' });
+  assert.equal(ok.statusCode, 200, ok.body);
+  assert.equal(app.ext.state.counters[counter], 1);
+  assert.equal((await press(counter, { host: `localhost:${app.port}` })).statusCode, 200, 'this PC needs no key');
+  assert.equal((await press(counter, key, '?which=longPress')).statusCode, 200);
+  assert.equal(app.ext.state.counters[counter], 10);
+
+  assert.equal((await press('nope', key)).statusCode, 404);
+  assert.match((await press(ptt, key)).json().error, /has to be held/);
+  const failed = await press(broken, key);
+  assert.equal(failed.statusCode, 422);
+  assert.match(failed.json().error, /not found/);
+
+  const list = await app.http.inject({ method: 'GET', url: '/api/buttons', headers: key });
+  const wins = (list.json().buttons as { id: string; label: string; page: string; tap: string }[]).find((b) => b.id === counter);
+  assert.deepEqual(wins && { label: wins.label, page: wins.page, tap: wins.tap }, { label: 'Wins', page: 'API', tap: 'counter' });
+  assert.equal((await app.http.inject({ method: 'GET', url: '/api/buttons', headers: lan })).statusCode, 401);
+});
+
+test('live scene pictures go to the browsers that show them', async () => {
+  const a = connect(`localhost:${app.port}`);
+  await a.next('init');
+  a.ws.send(JSON.stringify({ t: 'thumbs', scenes: ['BRB'] }));
+  const first = await a.next('thumbs');
+  assert.match(first.images.BRB, /^data:image\//);
+  assert.deepEqual(Object.keys(first.images), ['BRB']);
+
+  const b = connect(`localhost:${app.port}`);
+  await b.next('init');
+  const from = b.messages.length;
+  b.ws.send(JSON.stringify({ t: 'thumbs', scenes: ['BRB'] }));
+  assert.ok((await b.next('thumbs', from)).images.BRB, 'a picture taken already comes right away');
+  a.ws.close();
+  b.ws.close();
+  await waitFor(() => Object.keys(app.thumbnails.images).length === 0, 3000, 'pictures stop when no one looks');
 });

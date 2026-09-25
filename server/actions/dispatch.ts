@@ -4,7 +4,7 @@ import { actionBehavior } from '../../shared/actions-meta.ts';
 import { findButton } from '../../shared/deck-utils.ts';
 import type { Action, Button, Deck } from '../../shared/schema.ts';
 import { errorMessage, type Logger } from '../log.ts';
-import { ActionError, runAction, type ExecutorRegistry, type Phase } from './executor.ts';
+import { ActionError, runAction, type ActionCtx, type ExecutorRegistry, type Phase } from './executor.ts';
 
 export interface DispatcherDeps {
   /** Runs the actions; see registry.ts. */
@@ -15,7 +15,7 @@ export interface DispatcherDeps {
 
 export class Dispatcher {
   /** Buttons currently held down, per client, so they can be released if the client vanishes. */
-  private holds = new Map<string, Map<string, Action>>();
+  private holds = new Map<string, Map<string, { action: Action; ctx: ActionCtx }>>();
   /** Latest position per fader button while a change is in flight (older ones are dropped). */
   private faderPending = new Map<string, number>();
   private faderBusy = new Set<string>();
@@ -29,24 +29,25 @@ export class Dispatcher {
   async press(pageId: string, buttonId: string, which: 'tap' | 'longPress'): Promise<void> {
     const action = this.lookup(pageId, buttonId)[which];
     if (!action) throw new ActionError('This button has no action');
-    await this.run(action, { kind: 'press' });
+    await this.run(action, { kind: 'press' }, { pageId, buttonId });
   }
 
   async hold(clientId: string, pageId: string, buttonId: string, down: boolean): Promise<void> {
     if (!down) {
-      const action = this.holds.get(clientId)?.get(buttonId);
-      if (!action) return;
+      const hold = this.holds.get(clientId)?.get(buttonId);
+      if (!hold) return;
       this.holds.get(clientId)!.delete(buttonId);
-      await this.run(action, { kind: 'hold', down: false });
+      await this.run(hold.action, { kind: 'hold', down: false }, hold.ctx);
       return;
     }
     const action = this.lookup(pageId, buttonId).tap;
     if (!action || actionBehavior(action) !== 'hold') throw new ActionError('This button is not a hold button');
-    const held = this.holds.get(clientId) ?? new Map<string, Action>();
+    const held = this.holds.get(clientId) ?? new Map<string, { action: Action; ctx: ActionCtx }>();
     this.holds.set(clientId, held);
     if (held.has(buttonId)) return;
-    held.set(buttonId, action); // registered first, so a failed press still gets its release
-    await this.run(action, { kind: 'hold', down: true });
+    const ctx = { pageId, buttonId };
+    held.set(buttonId, { action, ctx }); // registered first, so a failed press still gets its release
+    await this.run(action, { kind: 'hold', down: true }, ctx);
   }
 
   /** Release everything a client was holding (it disconnected mid-press, e.g. push-to-talk). */
@@ -54,9 +55,9 @@ export class Dispatcher {
     const held = this.holds.get(clientId);
     if (!held) return;
     this.holds.delete(clientId);
-    for (const action of held.values()) {
+    for (const { action, ctx } of held.values()) {
       try {
-        await this.run(action, { kind: 'hold', down: false });
+        await this.run(action, { kind: 'hold', down: false }, ctx);
       } catch (err) {
         this.deps.log.warn(`Could not release a held button: ${errorMessage(err)}`);
       }
@@ -73,7 +74,7 @@ export class Dispatcher {
       while (this.faderPending.has(buttonId)) {
         const next = this.faderPending.get(buttonId)!;
         this.faderPending.delete(buttonId);
-        await this.run(action, { kind: 'fader', pos: next });
+        await this.run(action, { kind: 'fader', pos: next }, { pageId, buttonId });
       }
     } finally {
       this.faderBusy.delete(buttonId);
@@ -86,7 +87,7 @@ export class Dispatcher {
     return hit.button;
   }
 
-  private run(action: Action, phase: Phase): Promise<void> {
-    return runAction(this.deps.executors, action, phase);
+  private run(action: Action, phase: Phase, ctx: ActionCtx): Promise<void> {
+    return runAction(this.deps.executors, action, phase, ctx);
   }
 }

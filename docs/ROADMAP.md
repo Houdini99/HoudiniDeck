@@ -1,6 +1,6 @@
 # Roadmap
 
-Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work. The deck also runs on Windows 10/11 (see "Windows support" below).
+Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work. The deck also runs on Windows 10/11 (see "Windows support" below). Phase 4 added what other stream decks have (soundboard, timers, counters, toggles, Type Text, live scene pictures, an HTTP API, undo, …); see "Phase 4" below.
 
 ## 0. Before anything new: verify on the real PC
 
@@ -26,6 +26,14 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **KDE shortcuts:** the list in the editor, and pressing e.g. KWin → Overview.
   - **Run Command:** only if the user wants it. Start the deck with `STREAMDECK_ENABLE_COMMANDS=1`; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
 
+- [ ] **Check the Phase 4 buttons against the real programs and OBS** (built against the mock OBS, fakes and unit tests; see "Phase 4" for how each works):
+  - **Play Sound:** an MP3 and a WAV with the real `pw-play`; that OBS's Desktop Audio hears it; a second press stops it; Stop All.
+  - **Type Text:** after installing ydotool; text with umlauts and an emoji into a browser field, with and without Enter; that KDE's clipboard (Klipper) is used when `wl-clipboard` isn't installed.
+  - **Open Website:** opens in the default browser (also from the systemd service).
+  - **Set Text, counters and timers with a text source:** against a real Text (FreeType 2) source; a running countdown updates it every second.
+  - **Refresh Browser Source** on a real browser source (the `refreshnocache` button).
+  - **Live scene pictures:** that OBS sends JPEGs the browser shows, and how much CPU/GPU it costs with a few of them.
+  - **OBS Stats:** frame rate, CPU and lag tiles. Bitrate and dropped frames only show while live, so check them the next time you stream (never start a stream just to test).
 - [ ] **Check on a real Windows 11 PC.** CI (`.github/workflows/ci.yml`) runs the tests, the real PowerShell helper and a start-up smoke test on a Windows runner, but that has no speakers, players or desktop. On the PC:
   - `npm install`, `npm run build`, `npm start` in PowerShell; the firewall question; pairing a phone (is the QR code's address the Wi-Fi/Ethernet one?).
   - **System volume:** mute, step and fader for speakers and microphone; the buttons follow changes made in Windows.
@@ -35,6 +43,7 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **Stats:** CPU, RAM, and the NVIDIA tiles; CPU temperature says n/a.
   - `settings.json`: `icacls data\settings.json` lists only the user.
   - Autostart through `deploy\windows\virtual-streamdeck.cmd` in the Startup folder.
+  - **Phase 4:** Play Sound with an MP3 and a WAV (winmm), a second press stops it, and that the button goes dark when the sound ends; Type Text with umlauts, an emoji and Enter (e.g. in Notepad and a browser); Open Website; the HTTP API with `curl.exe`.
   - **The installer** (from the Windows installer workflow's artifact or a release): the SmartScreen warning, the options, that the Start menu entry opens the browser (and only the browser when the deck already runs), no firewall question with the firewall option, autostart, an update over a running deck, and uninstalling with and without deleting the data.
 
 ## Windows support (2026‑09‑25)
@@ -73,8 +82,10 @@ For each action type:
 
 1. **Schema:** add to `ActionSchema` in `shared/schema.ts`. Prefix the type by area: `system.*`, `http.*`, `media.*`, `macro`, `discord.*`.
 2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. If it can't work on every system, set `platforms` (see "Windows support"), or give it a Windows path through the helper. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`. A field with `show` only appears (and is only required) while `show(action)` is true.
-3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
-4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts`.
+3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase, ctx) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
+   - `ctx` (`ActionCtx`) names the button the action runs for; macro steps and toggle sides get their macro's or toggle's button. Actions that keep state per button (counters, timers, toggles) key it by that id in `ButtonStates` (`server/button-state.ts`, saved to `data/button-state.json`), which also puts it into `ExtState`.
+   - Actions that contain other actions (macro steps, toggle sides): walk them with `withNested()` from `shared/deck-utils.ts`, so checks like "no new Run Command buttons" see inside them.
+4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts` (it also gets the button's id, for per-button state).
    - State that isn't OBS (now playing, system volume, stats) goes into `ExtState` in `shared/ext-types.ts`; add a field for the new slice.
    - A watcher under `server/system/` (see `media.ts`) writes it into the `ExtStore` (`server/ext-store.ts`) and calls `changed()`. The hub then sends a debounced `{ t: 'ext' }` message, and the browser keeps it in `store.ext`.
    - Buttons see it as `ctx.ext` in `actionStatus()` (`VisualCtx`) and in `autoLabel` (`LabelCtx`).
@@ -157,9 +168,31 @@ For each action type:
   - Store the refresh token. RPC voice scopes only work for accounts on the app's team, which is fine for personal use.
   - **Fallback:** bind a Discord keybind and use `system.hotkey`.
 
+## Phase 4: what other stream decks have (2026‑09‑25)
+
+Built on the branch `feature/more-deck-features`, against the mock OBS, fakes and unit tests (`tests/button-state.test.ts`, `sound.test.ts`, `new-actions.test.ts`, `thumbnails.test.ts`, and end-to-end cases in `server.test.ts`). The checks still to do on the PC are in section 0.
+
+- [x] **Per-button state:** executors get `ActionCtx` (the button). `ButtonStates` keeps counts, toggles and timers in `ExtState` (`counters`, `toggles`, `timers`), saves them to `data/button-state.json` (debounced, atomic) and drops entries of deleted buttons at start-up (not while running, so Undo can bring a counter back with its count).
+- [x] **`toggle`** `{ on, off }` (Elgato's Multi Action Switch): each side is a step action or a macro (schema: `ToggleSideSchema`, press behavior only). A side that fails doesn't flip the toggle; a second press while a side runs is refused. The button is active while on; its default icon is a switch.
+- [x] **`counter`** `{ mode: add|set, step?, value?, target?, textSource?, textFormat? }`: tap +1, and new buttons get a long press "set to 0". `target` points at another counter button (for macros); the count then shows on both. The text source gets `textFormat` with `{n}` (e.g. "Deaths: {n}"); a failed write is reported but the count still changes.
+- [x] **`timer`** `{ mode: toggle|restart|reset, durationSec?, target?, textSource?, textFormat?, doneText? }`: a countdown (with `durationSec`) or stopwatch. The state is just `{ startedAt?, elapsedMs }`, so browsers compute the time themselves from the server clock (the store ticks on each full second). Done countdowns flash (`alert`) until tapped, which resets them. `TimerTexts` (`server/actions/timer.ts`) writes text sources after each change and every 200 ms while one runs (only when the text changes), and again when OBS reconnects. The definition (duration, text source) is the button's own tap or long press, see `timerDefinition()`.
+- [x] **`clock`** (display): the time, optionally with seconds, 12-hour and the date, in the viewing device's time zone.
+- [x] **`sound.play`** `{ sound, name?, volume?, mode: toggle|restart|overlap }` and **`sound.stop`**: uploads accept MP3 and WAV (sniffed; up to 15 MB) as `<hash>.mp3|wav` (`SOUND_NAME_RE`). Linux plays with `pw-play`, then `paplay`, then `ffplay` (the first one installed), one process per sound; a player that exits with an error within 400 ms fails the press with its stderr. Windows: helper ops `sound.play` (MCI `open … type mpegvideo`, volume 0–1000, returns the length), `sound.playing`, `sound.close`; the deck closes each sound after its length. `ExtState.sounds` lists `<button>/<file>` while playing.
+- [x] **`system.openUrl`** (Open Website): http(s) only, normalized with `new URL()`; `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows, started detached (a browser may keep running) and watched for a second for an error exit. Not behind the commands flag (it only opens web pages, like webhooks only send requests).
+- [x] **`system.text`** (Type Text) `{ text, enter? }`: Windows types UTF-16 characters with `SendInput` `KEYEVENTF_UNICODE` (helper op `text`); Linux puts the text on the clipboard with `wl-copy --` (or Klipper's `setClipboardContents` over busctl) and presses Ctrl+V (and Enter) through ydotool, because `ydotool type` follows the US layout. It replaces the clipboard, and terminals want Ctrl+Shift+V.
+- [x] **OBS:** `obs.text` (SetInputSettings `{text}` on `text_gdiplus*`/`text_ft2_source*`), `obs.browserRefresh` (PressInputPropertiesButton `refreshnocache`), `obs.stats` (display: dropped frames and bitrate while live, FPS, CPU, render/encode lag). The mirror's stream output now keeps `bytes`, `bitrateKbps` (from the difference between polls), `skippedFrames` and `totalFrames`.
+- [x] **Live scene pictures:** `obs.scene.preview`. Browsers subscribe with `{ t: 'thumbs', scenes }` (like stats); `SceneThumbnails` (`server/obs/thumbnails.ts`) takes a 256 px JPEG per wanted scene every 2 s, one after the other, and the hub sends only changed pictures, to the browsers that want them. A button with its own icon doesn't show one.
+- [x] **`deck.pageStep`** (Next / Previous Page), in the browser like the other navigation.
+- [x] **HTTP API:** `POST /api/buttons/:id/press[?which=longPress]` and `GET /api/buttons` (`server/api.ts`), with the key as `Authorization: Bearer`, or none from the PC itself; foreign `Origin`s are refused; only press-behavior actions. Any body is ignored (some tools send empty JSON). The editor shows the curl command (from the pairing link).
+- [x] **Deck editing:** `deck.undo`/`deck.redo` (`DeckHistory`, last 30 edits in memory, anyone's; no-op edits aren't recorded; the commands check applies, so Undo can't bring back a Run Command button while commands are off). `button.duplicate` with `toPageId` (copy to page), `page.duplicate` (counters/timers pointing inside the page point at the copies). Labels at top/middle/bottom and small/large (`labelPos`, `labelSize`).
+- [x] **Idle dimming** (per device, Settings): a dark overlay with a faint clock after N minutes; the waking tap is swallowed.
+
 ### Later / nice to have
 
-- **Live scene thumbnails on scene buttons:** `GetSourceScreenshot` at small size, throttled, only for visible buttons. Opt-in per button, because it costs OBS CPU.
 - **Optional HTTPS** with a self-signed certificate. Plain http blocks the Wake Lock API, installable PWAs and the clipboard.
 - **Per-device layouts**, or picking the start page automatically by screen size.
-- **Garbage-collect** unreferenced files in `data/uploads/`.
+- **Garbage-collect** unreferenced files in `data/uploads/` (now images and sounds; keep those that backups reference).
+- **Sounds on a chosen output device** (e.g. a virtual cable), with `pw-play --target` on Linux.
+- **Type Text into terminals** (a Ctrl+Shift+V option on Linux).
+- **Export and import single pages**, with their images and sounds.
+- **A countdown to a time of day** (e.g. "Stream starts at 20:00").

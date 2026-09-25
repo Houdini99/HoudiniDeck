@@ -3,28 +3,33 @@
 A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC with OBS (Linux or Windows 11); open it on a tablet, phone or laptop on the same network, and every device stays in sync.
 
 - **OBS control:**
-  - Scenes, with Program/Preview highlighting in Studio Mode.
-  - Source visibility and filters.
+  - Scenes, with Program/Preview highlighting in Studio Mode, and optionally a live picture of the scene on the button.
+  - Source visibility and filters; set the text of a text source; refresh a browser source (stuck alerts or chat).
   - Mute, push-to-talk/push-to-mute, and volume faders with live meters.
   - Stream, record (pause, split, chapters), replay buffer and virtual camera.
   - Transitions, screenshots, scene collections and profiles, OBS hotkeys, and media sources.
+  - Stream health tiles: dropped frames and bitrate while live, frame rate, OBS's CPU use, rendering and encoding lag.
 - **Beyond OBS:**
   - Media keys for music and videos on the PC (Spotify, browsers, VLC, …), optionally showing the song and its cover art.
+  - **Soundboard:** buttons that play MP3 or WAV clips on the PC's speakers (OBS hears them through Desktop Audio), a second press stops or restarts them, and a Stop All button.
   - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
   - Live system stats tiles: CPU load and temperature (Linux only), memory, and NVIDIA GPU load, temperature and memory.
-  - Keyboard shortcuts sent to the PC, optionally held while you hold the button (push-to-talk).
+  - Keyboard shortcuts sent to the PC, optionally held while you hold the button (push-to-talk), and **Type Text** for chat messages and the like.
+  - **Open Website:** a page in the PC's browser, e.g. your stream dashboard.
   - Linux with KDE Plasma: any Plasma global shortcut (Overview, Spectacle, Mute Microphone, …), picked from a list. Needs no setup.
-- **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
+- **Timers and counters:** a countdown or stopwatch, a counter (deaths, wins, …) and a clock, the same on every device. Counters and timers can write into an OBS text source, e.g. "Starting in 4:59" or "Deaths: 12" on stream, and they survive restarts.
+- **Macros and toggles:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording. A toggle runs one action on the first press and another on the next (lights on/off), and stays lit in between.
 - **Run Command (off by default):** a button starts a program or script on the PC. See [Security](#security).
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
+- **Press buttons from other apps:** Streamer.bot, Home Assistant, Bitfocus Companion or a script can press any deck button over HTTP (see [below](#press-buttons-from-other-apps)).
 - **A real deck:**
-  - Any grid size, several pages, and folders.
-  - Drag-and-drop editing.
-  - Icons (Material Design and brand logos), uploaded images, emoji and colors.
+  - Any grid size, several pages, folders, and Next/Previous Page buttons.
+  - Drag-and-drop editing, **undo and redo** (Ctrl+Z), and copying buttons or whole pages.
+  - Icons (Material Design and brand logos), uploaded images, emoji and colors; the label at the top, middle or bottom, in three sizes.
   - A separate look while a button is active, long-press actions, and "tap twice" protection for Stream.
 - **Built for touch:**
   - Buttons fire on touch-down, and hold-to-talk works.
-  - Compact mode, fullscreen or Add to Home Screen, and keep-the-screen-on.
+  - Compact mode, fullscreen or Add to Home Screen, keep-the-screen-on, and dimming after a few idle minutes (the tap that wakes it presses nothing).
 - **Survives restarts:** buttons are remembered by OBS's internal IDs, so renaming a scene in OBS doesn't break them. The deck reconnects on its own when OBS restarts, and a tablet reloads by itself after an update.
 
 ## Requirements
@@ -53,8 +58,8 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
    npm start
    ```
 
-3. Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, which comes with PipeWire (WirePlumber).
-4. Optional: `ydotool`, for keyboard shortcuts. It types through the kernel, so it works on Wayland:
+3. Optional: `playerctl`, for the media keys (`sudo pacman -S playerctl`). The system volume buttons use `wpctl`, and sound buttons `pw-play`; both come with PipeWire.
+4. Optional: `ydotool`, for keyboard shortcuts and Type Text. It types through the kernel, so it works on Wayland:
 
    ```bash
    sudo pacman -S ydotool
@@ -63,6 +68,8 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
    ```
 
    The ydotool service needs write access to `/dev/uinput`.
+
+   Type Text pastes its text through the clipboard. KDE Plasma's clipboard works as it is; elsewhere install `wl-clipboard` (`sudo pacman -S wl-clipboard`).
 
 ### On Windows 10/11 with the installer (easiest)
 
@@ -161,6 +168,24 @@ Phones and tablets need an access key (see [Security](#security)).
   - **Pages** adds, renames, resizes and reorders pages.
 - **Volume faders:** drag up or down to change the volume, tap to mute.
 - **Push-to-talk buttons** unmute only while you hold them. If the device drops off the network mid-press, the server mutes again.
+- **Undo:** in edit mode, the ↶ and ↷ buttons in the top bar (or Ctrl+Z and Ctrl+Shift+Z) take back and redo the last edits, made on any device.
+- **Counters and timers:** tap to count or to start and pause; a long press resets (new buttons come with that long press). Other buttons, and macro steps, can change the same counter or timer: pick it under "Which counter" / "Which timer". A countdown that ran out flashes until you tap it.
+- **Sounds:** add a Play Sound button and upload an MP3 or WAV. It plays on the PC's default speakers, so OBS hears it through Desktop Audio (as do you). "Listen here" in the editor plays it on the device you edit on.
+- **Live scene pictures:** tick "Show a live picture of the scene" on a Switch Scene button. OBS renders a small picture every 2 seconds while the button is on some screen, which costs it a little GPU and CPU.
+
+### Press buttons from other apps
+
+Any program on your network that can send an HTTP request can press a deck button, e.g. Streamer.bot, Home Assistant (`rest_command`), Bitfocus Companion or a script. Open the button in the editor → **Press it from other apps** for the exact command, which looks like this:
+
+```bash
+curl -X POST -H "Authorization: Bearer <access key>" http://my-pc.local:3325/api/buttons/<button id>/press
+```
+
+- Add `?which=longPress` to run the button's long-press action.
+- `GET /api/buttons` (with the same header) lists every button with its id, page and label.
+- The access key is the one in the pairing link (`#k=…`). On the PC itself, `http://localhost:3325/…` works without it.
+- In Windows PowerShell, type `curl.exe` instead of `curl`.
+- Push-to-talk, faders, page navigation and display tiles can't be pressed this way.
 
 ## Configuration
 
@@ -181,11 +206,12 @@ The easiest place for them is the `.env` file, on Linux and Windows alike: in th
 ### Data and backups
 
 ```
-data/              (the Windows installer's version: %LOCALAPPDATA%\HoudiniDeck)
-  deck.json        pages and buttons
-  settings.json    OBS connection + access key (file mode 0600)
-  uploads/         button images
-  backups/         older deck.json versions (automatic, last 20)
+data/                (the Windows installer's version: %LOCALAPPDATA%\HoudiniDeck)
+  deck.json          pages and buttons
+  settings.json      OBS connection + access key (file mode 0600)
+  button-state.json  counter counts, running timers and which toggles are on
+  uploads/           button images and sounds
+  backups/           older deck.json versions (automatic, last 20)
 ```
 
 **Settings → Backup** can also export and import the whole deck as a JSON file. A deck file that can't be read is renamed to `deck.json.corrupt-<time>` rather than overwritten.
@@ -236,6 +262,10 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Webhooks:**
   - A paired device can make the PC send HTTP requests to any `http://` or `https://` address, including services on your network.
   - Headers (e.g. an API token) are saved in the deck, so every paired device and every backup file can read them.
+- **Open Website** opens only `http://` and `https://` addresses, in your default browser (so with your logins). Like webhooks, any paired device can add such a button.
+- **Keyboard Shortcut and Type Text** buttons type into whichever window has focus, a terminal included. Keep that in mind before you pair a device you don't fully trust.
+- **The HTTP API** (`/api/buttons/…`) needs the access key, like pairing does, except from the PC itself. It presses buttons that are on the deck; it can't run anything else. Requests from other websites are refused.
+- **Sounds:** only MP3 and WAV files are accepted (checked by content), and only files the deck stored itself are played.
 
 Don't forward the port to the internet. For access away from home, use your VPN (e.g. WireGuard).
 
@@ -275,7 +305,7 @@ deploy/   systemd user unit; for Windows a start script and the installer (windo
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. Executors are told which button they run for (`ActionCtx`); state kept per button (counters, timers, toggles) lives in `server/button-state.ts`. What's planned next is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 
@@ -288,12 +318,16 @@ The editor, validation and multi-device sync pick it up automatically. What's pl
 - **"Can't reach OBS":** OBS isn't running, or its WebSocket server is off (Tools → WebSocket Server Settings).
 - **Media keys are dimmed (Linux):** no media player is running, or `playerctl` isn't installed. Run `playerctl -l` in a terminal: it should list your players.
 - **Keyboard shortcuts do nothing (Linux):** the toast says whether `ydotool` is missing or its service isn't running. `ydotool key 29:1 29:0` in a terminal (taps Ctrl) should run without an error.
+- **Type Text (Linux)** pastes with Ctrl+V, which terminals don't take (they want Ctrl+Shift+V). It also replaces what you had copied.
+- **Sounds don't play (Linux):** the toast names the problem. `pw-play /path/to/sound.mp3` in a terminal should play it; the deck also tries `paplay` and `ffplay`.
+- **Open Website does nothing (Linux, systemd service):** the browser needs your desktop session's variables; see "Start it automatically on login".
 - **System volume buttons are dimmed (Linux):** `wpctl get-volume @DEFAULT_AUDIO_SINK@` should print the volume. If the deck runs as a systemd service, it needs to run as your user (it does with the included user unit).
 - **On Windows:**
   - **Media keys are dimmed:** only players that show up in Windows' own media controls (next to the volume slider in the taskbar) can be controlled: Spotify, Chrome, Edge, Firefox and most others. VLC 3 doesn't show up there.
   - **Keyboard shortcuts don't reach a program that runs as administrator** (OBS sometimes does): Windows doesn't let normal programs type into those. Start the deck as administrator too, or use an OBS Hotkey button instead. Some games with anti-cheat ignore typed keys.
   - **"Windows PowerShell couldn't start the deck's helper":** media keys, system volume and keyboard shortcuts need it. The server log says why; `powershell -NoProfile -Command "$PSVersionTable.PSVersion"` should print 5.1. A company PC may block PowerShell scripts by policy.
   - **The CPU temperature tile says n/a:** Windows has no standard way for programs to read it.
+  - **Sounds:** Windows plays MP3 and WAV through its built-in media player component (winmm), on the default speakers.
 - **The tablet's screen turns off:**
   - Keep-awake needs one tap after the page loads.
   - Over plain `http://`, browsers only allow a workaround, so also consider raising the tablet's auto-lock time.
