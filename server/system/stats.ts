@@ -1,6 +1,9 @@
 // Readings for System Stats tiles, every 2 seconds and only for the metrics some browser shows:
 // CPU load (/proc/stat), memory (/proc/meminfo), CPU temperature (hwmon) and NVIDIA GPU (nvidia-smi).
+// Other systems (Windows) have no /proc: CPU and memory come from Node's os module there, and the CPU
+// temperature isn't available (Windows has no standard way to read it).
 import { readFile, readdir } from 'node:fs/promises';
+import os from 'node:os';
 import { join } from 'node:path';
 import type { StatMetric, StatsState } from '../../shared/ext-types.ts';
 import type { ExtStore } from '../ext-store.ts';
@@ -27,6 +30,19 @@ export function parseProcStat(text: string): CpuTimes | null {
   const total = values.reduce((a, b) => a + b, 0);
   const idle = values[3] + values[4]; // idle + iowait
   return { busy: total - idle, total };
+}
+
+/** The same sums from Node's per-core counters (for systems without /proc). */
+export function cpuTimesOf(cpus: Pick<os.CpuInfo, 'times'>[]): CpuTimes | null {
+  if (cpus.length === 0) return null;
+  let busy = 0;
+  let total = 0;
+  for (const { times } of cpus) {
+    const all = times.user + times.nice + times.sys + times.idle + times.irq;
+    total += all;
+    busy += all - times.idle;
+  }
+  return { busy, total };
 }
 
 export function cpuPercent(before: CpuTimes, after: CpuTimes): number | undefined {
@@ -60,6 +76,8 @@ export interface StatsWatcherDeps {
   procRoot?: string;
   hwmonRoot?: string;
   pollMs?: number;
+  /** For tests: the operating system (process.platform). Only Linux has /proc and hwmon. */
+  platform?: NodeJS.Platform;
 }
 
 export class StatsWatcher {
@@ -130,8 +148,12 @@ export class StatsWatcher {
     if (JSON.stringify(this.stats) !== before) this.deps.store.changed();
   }
 
+  private get linux(): boolean {
+    return (this.deps.platform ?? process.platform) === 'linux';
+  }
+
   private async readCpu(): Promise<number | null | undefined> {
-    const times = parseProcStat(await this.read(join(this.deps.procRoot ?? '/proc', 'stat')));
+    const times = this.linux ? parseProcStat(await this.read(join(this.deps.procRoot ?? '/proc', 'stat'))) : cpuTimesOf(os.cpus());
     if (!times) return null;
     const before = this.lastCpu;
     this.lastCpu = times;
@@ -139,10 +161,13 @@ export class StatsWatcher {
   }
 
   private async readMemory(): Promise<StatsState['memory']> {
+    // Windows' free memory is what Task Manager calls "Available", so this matches its "In use".
+    if (!this.linux) return { used: os.totalmem() - os.freemem(), total: os.totalmem() };
     return parseMeminfo(await this.read(join(this.deps.procRoot ?? '/proc', 'meminfo')));
   }
 
   private async readCpuTemp(): Promise<number | null> {
+    if (!this.linux) return null;
     if (this.tempFile === undefined) this.tempFile = await this.findTempSensor();
     if (!this.tempFile) return null;
     const milli = Number((await this.read(this.tempFile)).trim());

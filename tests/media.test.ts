@@ -1,8 +1,10 @@
 // Media keys: the playerctl watcher, the executor and the cover-art route, without real players.
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import { ActionError } from '../server/actions/executor.ts';
 import { mediaExecutor } from '../server/actions/media.ts';
@@ -60,6 +62,8 @@ test('playerctl only runs while a browser is connected', () => {
 
 test('lines become player state; https art is passed on, local art gets a token', () => {
   const { live, watcher, media } = setup();
+  const cover = join(tmpdir(), 'firefox-mpris', '7_1.png');
+  const coverUrl = pathToFileURL(cover).href;
   watcher.setActive(true);
   const out = live()[0].on;
 
@@ -67,17 +71,17 @@ test('lines become player state; https art is passed on, local art gets a token'
   assert.deepEqual(media().players[''], { instance: 'spotify', status: 'Playing', artist: 'An Artist', title: 'One', art: 'https://i.scdn.co/image/abc' });
   assert.equal(watcher.currentInstance(), 'spotify');
 
-  out.line(line('firefox.instance_7', 'Playing', 'Video', 'file:///tmp/firefox-mpris/7_1.png'));
+  out.line(line('firefox.instance_7', 'Playing', 'Video', coverUrl));
   const art = media().players['']!.art!;
   const token = art.replace('/api/media/art/', '');
   assert.match(token, /^[a-f0-9]{32}$/);
-  assert.equal(watcher.artFile(token), '/tmp/firefox-mpris/7_1.png');
+  assert.equal(watcher.artFile(token), cover);
   assert.equal(watcher.currentInstance(), 'firefox.instance_7');
 
-  out.line(line('firefox.instance_7', 'Paused', 'Video', 'file:///tmp/firefox-mpris/7_1.png'));
+  out.line(line('firefox.instance_7', 'Paused', 'Video', coverUrl));
   assert.equal(media().players['']!.art, art, 'pausing keeps the same picture');
 
-  out.line(line('firefox.instance_7', 'Playing', 'Next video', 'file:///tmp/firefox-mpris/7_1.png'));
+  out.line(line('firefox.instance_7', 'Playing', 'Next video', coverUrl));
   assert.notEqual(media().players['']!.art, art, 'a new track gets a new token even for the same file');
   assert.equal(watcher.artFile(token), undefined, 'the old token is gone');
 

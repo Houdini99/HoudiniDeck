@@ -10,14 +10,14 @@ import { registerIconRoutes } from './icons.ts';
 import type { Logger } from './log.ts';
 import type { ObsBridge } from './obs/bridge.ts';
 import type { SettingsStore } from './store/settings-store.ts';
-import { registerMediaRoutes, type MediaWatcher } from './system/media.ts';
+import { registerMediaRoutes, type MediaSource } from './system/media.ts';
 import { MAX_UPLOAD_BYTES, registerUploadRoutes } from './uploads.ts';
 
 export interface HttpDeps {
   env: Env;
   hub: Hub;
   bridge: ObsBridge;
-  media: MediaWatcher;
+  media: MediaSource;
   settingsStore: SettingsStore;
   log: Logger;
 }

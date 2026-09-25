@@ -19,7 +19,7 @@ import type { ObsBridge } from './obs/bridge.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
 import type { AudioWatcher } from './system/audio.ts';
-import type { MediaWatcher } from './system/media.ts';
+import type { MediaSource } from './system/media.ts';
 import type { StatsWatcher } from './system/stats.ts';
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -45,7 +45,7 @@ export interface HubDeps {
   settingsStore: SettingsStore;
   bridge: ObsBridge;
   ext: ExtStore;
-  media: MediaWatcher;
+  media: MediaSource;
   audio: AudioWatcher;
   stats: StatsWatcher;
   /** Lists KDE's global shortcuts for the editor. */

@@ -5,7 +5,10 @@ import { ActionError } from '../server/actions/executor.ts';
 import { kdeExecutor } from '../server/actions/kde.ts';
 import { componentPath, listKdeShortcuts } from '../server/system/kde.ts';
 import type { RunResult, Runner } from '../server/system/process.ts';
-import { actionAutoLabel } from '../shared/actions-meta.ts';
+import { actionAutoLabel, availableActionTypes } from '../shared/actions-meta.ts';
+import { emptyExtState } from '../shared/ext-types.ts';
+import { buttonVisual } from '../shared/feedback.ts';
+import { emptyObsState } from '../shared/obs-types.ts';
 import { ActionSchema } from '../shared/schema.ts';
 
 const info = (id: string, name: string, component: string, componentName: string) => [id, name, component, componentName, 'default', 'Default Context', [], []];
@@ -57,7 +60,7 @@ test('the editor gets every app with its shortcuts, by friendly name', async () 
 
 test('a press checks that the shortcut exists, then invokes it', async () => {
   const { calls, run } = fakeBusctl();
-  const press = kdeExecutor(run);
+  const press = kdeExecutor(run, 'linux');
   await press({ type: 'kde.shortcut', component: 'kwin', shortcut: 'Overview' }, { kind: 'press' });
   assert.deepEqual(
     calls.map((c) => c.slice(6)),
@@ -76,9 +79,23 @@ test('a press checks that the shortcut exists, then invokes it', async () => {
 
 test('outside Plasma, or without busctl, the toast says why', async () => {
   const action = { type: 'kde.shortcut' as const, component: 'kwin', shortcut: 'Overview' };
-  await assert.rejects(kdeExecutor(fakeBusctl({ noPlasma: true }).run)(action, { kind: 'press' }), /needs a Plasma session/);
-  await assert.rejects(kdeExecutor(fakeBusctl({ missing: true }).run)(action, { kind: 'press' }), /busctl is missing/);
+  await assert.rejects(kdeExecutor(fakeBusctl({ noPlasma: true }).run, 'linux')(action, { kind: 'press' }), /needs a Plasma session/);
+  await assert.rejects(kdeExecutor(fakeBusctl({ missing: true }).run, 'linux')(action, { kind: 'press' }), /busctl is missing/);
   await assert.rejects(listKdeShortcuts(fakeBusctl({ noPlasma: true }).run), ActionError);
+});
+
+test('on Windows, KDE shortcut buttons refuse without running anything, and are dimmed', async () => {
+  const { calls, run } = fakeBusctl();
+  const action = { type: 'kde.shortcut' as const, component: 'kwin', shortcut: 'Overview' };
+  await assert.rejects(kdeExecutor(run, 'win32')(action, { kind: 'press' }), /only work on Linux/);
+  assert.equal(calls.length, 0);
+  assert.equal(availableActionTypes(false, 'win32').includes('kde.shortcut'), false, 'the editor doesn’t offer them');
+  assert.equal(availableActionTypes(false, 'linux').includes('kde.shortcut'), true);
+  const look = (platform?: string) =>
+    buttonVisual({ id: 'k', tap: action }, { obs: emptyObsState(), deck: { version: 1, revision: 0, homePageId: 'p', pages: [] }, ext: emptyExtState(), now: 0, platform });
+  assert.equal(look('win32').disabled, true);
+  assert.equal(look('linux').disabled, undefined);
+  assert.equal(look(undefined).disabled, undefined, 'an older server that doesn’t say: assume it can');
 });
 
 test('schema and label', () => {

@@ -1,5 +1,5 @@
 // Small deck helpers shared by server and browser. No runtime dependencies (zod stays server-side).
-import type { Button, Deck, Page } from './schema.ts';
+import type { Action, Button, Deck, Page } from './schema.ts';
 
 export const LIMITS = { maxRows: 8, maxCols: 12, maxPages: 64 } as const;
 export const DEFAULT_OBS_URL = 'ws://127.0.0.1:4455';
@@ -54,4 +54,19 @@ export function findButton(
 /** Slots that would fall outside the grid if the page were resized to rows×cols. */
 export function slotsOutside(page: Page, rows: number, cols: number): string[] {
   return Object.keys(page.buttons).filter((key) => !slotInBounds({ rows, cols }, key));
+}
+
+/** Every action on the deck: taps, long presses and the steps of macros. */
+export function deckActions(deck: Deck): Action[] {
+  const actions: Action[] = [];
+  for (const page of deck.pages) {
+    for (const button of Object.values(page.buttons)) {
+      for (const action of [button.tap, button.longPress]) {
+        if (!action) continue;
+        actions.push(action);
+        if (action.type === 'macro') for (const step of action.steps) if ('action' in step) actions.push(step.action);
+      }
+    }
+  }
+  return actions;
 }

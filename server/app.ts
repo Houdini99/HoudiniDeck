@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import { deckActions } from '../shared/deck-utils.ts';
+import type { Deck } from '../shared/schema.ts';
 import { Dispatcher } from './actions/dispatch.ts';
 import { createExecutors } from './actions/registry.ts';
 import { packageVersion, picturesDir, type Env } from './env.ts';
@@ -17,16 +19,18 @@ import { DeckStore } from './store/deck-store.ts';
 import { SettingsStore } from './store/settings-store.ts';
 import { AudioWatcher } from './system/audio.ts';
 import { listKdeShortcuts } from './system/kde.ts';
-import { MediaWatcher } from './system/media.ts';
+import { MediaWatcher, type MediaSource } from './system/media.ts';
 import { runProcess, spawnLines } from './system/process.ts';
 import { StatsWatcher } from './system/stats.ts';
+import { WinHelper } from './system/windows/helper.ts';
+import { WindowsMediaWatcher } from './system/windows/media.ts';
 
 export interface App {
   http: FastifyInstance;
   hub: Hub;
   bridge: ObsBridge;
   ext: ExtStore;
-  media: MediaWatcher;
+  media: MediaSource;
   audio: AudioWatcher;
   stats: StatsWatcher;
   deckStore: DeckStore;
@@ -54,23 +58,33 @@ export async function startApp(env: Env): Promise<App> {
 
   const bridge = new ObsBridge({ url: obsConfig.url, password: obsConfig.password, log: createLogger('obs') });
   const ext = new ExtStore();
-  const media = new MediaWatcher({ store: ext, spawn: spawnLines, run: runProcess, log: createLogger('media') });
-  const audio = new AudioWatcher({ store: ext, run: runProcess, log: createLogger('audio') });
+  // Windows has none of the Linux programs (playerctl, wpctl, ydotool); its helper does their jobs.
+  const winHelper = process.platform === 'win32' ? new WinHelper({ log: createLogger('windows') }) : undefined;
+  const winMedia = winHelper && new WindowsMediaWatcher({ store: ext, helper: winHelper, log: createLogger('media') });
+  const media: MediaSource = winMedia ?? new MediaWatcher({ store: ext, spawn: spawnLines, run: runProcess, log: createLogger('media') });
+  const audio = new AudioWatcher({ store: ext, run: runProcess, windows: winHelper, log: createLogger('audio') });
   const stats = new StatsWatcher({ store: ext, run: runProcess, log: createLogger('stats') });
   for (const watcher of [media, audio]) {
     watcher.setDeck(deckStore.deck);
     deckStore.on('change', (deck) => watcher.setDeck(deck));
   }
+  if (winHelper) {
+    // Starting PowerShell takes a few seconds; Keyboard Shortcut buttons shouldn't wait for that on their first press.
+    const warmUp = (deck: Deck) => deckActions(deck).some((a) => a.type === 'system.hotkey') && winHelper.start();
+    warmUp(deckStore.deck);
+    deckStore.on('change', warmUp);
+  }
   const actionLog = createLogger('actions');
   const dispatcher = new Dispatcher({
     executors: createExecutors({
       bridge,
-      screenshotDir: join(picturesDir(), 'OBS'),
+      screenshotDir: join(await picturesDir(), 'OBS'),
       log: actionLog,
       run: runProcess,
       media,
       audio,
       commandsEnabled: env.commandsEnabled,
+      windows: winHelper && winMedia && { helper: winHelper, media: winMedia },
     }),
     getDeck: () => deckStore.deck,
     log: actionLog,
@@ -85,10 +99,16 @@ export async function startApp(env: Env): Promise<App> {
     media,
     audio,
     stats,
-    kdeShortcuts: () => listKdeShortcuts(runProcess),
+    kdeShortcuts: async () => (process.platform === 'linux' ? listKdeShortcuts(runProcess) : []),
     dispatcher,
     buildId: await readBuildId(env.webDist),
-    info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort), commands: env.commandsEnabled }),
+    info: () => ({
+      version,
+      hostname: os.hostname(),
+      urls: reachableUrls(env.publicPort),
+      commands: env.commandsEnabled,
+      platform: process.platform,
+    }),
     log: createLogger('hub'),
   });
   const http = await createHttpServer({ env, hub, bridge, media, settingsStore, log });
@@ -113,6 +133,7 @@ export async function startApp(env: Env): Promise<App> {
       media.stop();
       audio.stop();
       stats.stop();
+      winHelper?.stop();
       await bridge.stop();
       await http.close();
     },

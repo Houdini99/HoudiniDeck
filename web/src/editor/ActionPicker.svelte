@@ -9,7 +9,7 @@
   let { onpick, onfolder }: { onpick: (type: ActionType) => void; onfolder?: () => void } = $props();
 
   const groups = $derived.by(() => {
-    const types = availableActionTypes(store.info?.commands ?? false);
+    const types = availableActionTypes(store.info?.commands ?? false, store.info?.platform);
     return CATEGORIES.map((category) => ({ category, types: types.filter((t) => actionMeta(t).category === category) }));
   });
 

@@ -1,11 +1,17 @@
-// The media.* family: media keys for MPRIS players (Spotify, browsers, VLC, …) through playerctl.
-import type { MediaWatcher } from '../system/media.ts';
+// The media.* family: media keys for MPRIS players (Spotify, browsers, VLC, …) through playerctl, or on
+// Windows for its media sessions through the helper.
+import type { MediaSource } from '../system/media.ts';
 import type { RunResult, Runner } from '../system/process.ts';
+import type { WindowsMediaWatcher } from '../system/windows/media.ts';
 import { ActionError, type Executor } from './executor.ts';
 
 const COMMANDS = { playPause: 'play-pause', next: 'next', previous: 'previous', stop: 'stop' } as const;
 
-export function mediaExecutor(run: Runner, media: Pick<MediaWatcher, 'currentInstance'>): Executor<'media'> {
+export function windowsMediaExecutor(media: Pick<WindowsMediaWatcher, 'command'>): Executor<'media'> {
+  return (action) => media.command(action);
+}
+
+export function mediaExecutor(run: Runner, media: Pick<MediaSource, 'currentInstance'>): Executor<'media'> {
   return async (action) => {
     // Without a named player, control the one the buttons show; on its own, playerctl would
     // pick whichever player it happens to list first.

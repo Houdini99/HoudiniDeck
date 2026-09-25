@@ -7,7 +7,8 @@ import { ActionError } from '../server/actions/executor.ts';
 import { systemExecutor } from '../server/actions/system.ts';
 import { OpError, applyOp } from '../server/deck/ops.ts';
 import { readEnv } from '../server/env.ts';
-import { availableActionTypes } from '../shared/actions-meta.ts';
+import { outputTail, shellCommand } from '../server/system/command.ts';
+import { actionAutoLabel, availableActionTypes } from '../shared/actions-meta.ts';
 import { emptyExtState } from '../shared/ext-types.ts';
 import { buttonVisual } from '../shared/feedback.ts';
 import { emptyObsState } from '../shared/obs-types.ts';
@@ -86,18 +87,23 @@ test('the editor only offers Run Command when the server allows it; such buttons
 const run = (commandsEnabled: boolean, action: Command) =>
   systemExecutor({ run: async () => ({ code: 0, stdout: '', stderr: '' }), audio: { refresh: async () => {} }, commandsEnabled })(action, { kind: 'press' });
 
+// The same commands for sh (Linux) and cmd.exe (Windows).
+const win = process.platform === 'win32';
+const sleep1 = win ? 'ping -n 2 127.0.0.1 >nul' : 'sleep 1';
+const touch = (file: string) => (win ? `type nul > "${file}"` : `touch '${file}'`);
+
 test('the executor refuses to run anything while commands are off', async (t) => {
   const tmp = await tempDir();
   t.after(tmp.cleanup);
   const marker = join(tmp.dir, 'ran');
-  await assert.rejects(run(false, cmd(`touch '${marker}'`)), (err: Error) => err instanceof ActionError && /turned off/.test(err.message));
+  await assert.rejects(run(false, cmd(touch(marker))), (err: Error) => err instanceof ActionError && /turned off/.test(err.message));
   assert.equal(existsSync(marker), false);
 });
 
-test('commands run with sh; failures show the exit code and the end of stderr', async () => {
-  await run(true, cmd('echo hello && test "$(pwd)" = "$HOME"'));
+test('commands run in the home folder; failures show the exit code and the end of stderr', async () => {
+  await run(true, cmd(win ? 'echo hello && if /i not "%CD%"=="%USERPROFILE%" exit 5' : 'echo hello && test "$(pwd)" = "$HOME"'));
   await assert.rejects(
-    run(true, cmd('echo "first line" >&2; echo "what went wrong" >&2; exit 3')),
+    run(true, cmd(win ? '(echo first line)1>&2 & (echo what went wrong)1>&2 & exit 3' : 'echo "first line" >&2; echo "what went wrong" >&2; exit 3')),
     (err: Error) => err instanceof ActionError && err.message === 'The command failed (exit code 3):\nfirst line\nwhat went wrong',
   );
 });
@@ -106,7 +112,7 @@ test('the deck’s OBS password is not passed on to commands', async () => {
   const before = process.env.OBS_PASSWORD;
   process.env.OBS_PASSWORD = 'hunter2';
   try {
-    await run(true, cmd('test -z "$OBS_PASSWORD"'));
+    await run(true, cmd(win ? 'if defined OBS_PASSWORD exit 1' : 'test -z "$OBS_PASSWORD"'));
   } finally {
     if (before === undefined) delete process.env.OBS_PASSWORD;
     else process.env.OBS_PASSWORD = before;
@@ -118,15 +124,15 @@ test('a command that takes too long is stopped, including what it started', asyn
   t.after(tmp.cleanup);
   const marker = join(tmp.dir, 'late');
   const started = Date.now();
-  await assert.rejects(run(true, cmd(`sleep 1 && touch '${marker}'`, { timeoutMs: 1000 / 4 })), /stopped after 0.25 s/);
+  await assert.rejects(run(true, cmd(`${sleep1} && ${touch(marker)}`, { timeoutMs: 1000 / 4 })), /stopped after 0.25 s/);
   assert.ok(Date.now() - started < 1000);
-  await new Promise((r) => setTimeout(r, 1300));
+  await new Promise((r) => setTimeout(r, 1500));
   assert.equal(existsSync(marker), false, 'the sleeping child was stopped too');
 });
 
 test('a command that leaves something running in the background does not hang the button', async () => {
   const started = Date.now();
-  await run(true, cmd('sleep 1 &'));
+  await run(true, cmd(win ? `start "" /b ${sleep1}` : `${sleep1} &`));
   assert.ok(Date.now() - started < 1000);
 });
 
@@ -134,7 +140,22 @@ test('detached commands start and return; a missing program is reported', async 
   const tmp = await tempDir();
   t.after(tmp.cleanup);
   const marker = join(tmp.dir, 'launched');
-  await run(true, cmd(`sleep 0.2 && touch '${marker}'`, { detached: true }));
+  await run(true, cmd(win ? `ping -n 1 127.0.0.1 >nul && ${touch(marker)}` : `sleep 0.2 && ${touch(marker)}`, { detached: true }));
   assert.equal(existsSync(marker), true, 'it ran (and quick exits are waited for)');
   await assert.rejects(run(true, cmd('definitely-not-a-program-xyz --flag', { detached: true })), /Command not found: definitely-not-a-program-xyz/);
+});
+
+test('each system has its shell', () => {
+  assert.deepEqual(shellCommand('echo "hi" && ls', 'linux'), { file: 'sh', args: ['-c', 'echo "hi" && ls'] });
+  const cmdExe = shellCommand('echo "hi" && dir', 'win32');
+  assert.deepEqual(cmdExe.args, ['/d', '/s', '/c', '"echo "hi" && dir"'], 'cmd.exe /s strips just the outer quotes');
+  assert.equal(outputTail('one\r\ntwo\r\nthree\r\nfour\r\n'), 'two\nthree\nfour', 'Windows line ends');
+});
+
+test('Run Command labels name the program, also for Windows paths', () => {
+  const label = (command: string) => actionAutoLabel(cmd(command), {});
+  assert.equal(label('~/bin/lights-on.sh --bright'), 'lights-on.sh');
+  assert.equal(label('C:\\Tools\\lights.bat on'), 'lights.bat');
+  assert.equal(label('"C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe" --startreplaybuffer'), 'obs64.exe');
+  assert.equal(label('   '), 'Command');
 });

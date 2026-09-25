@@ -10,7 +10,7 @@
 
   // No macros inside macros, no page navigation, and nothing that needs holding or dragging.
   const stepTypes = $derived(
-    availableActionTypes(store.info?.commands ?? false).filter(
+    availableActionTypes(store.info?.commands ?? false, store.info?.platform).filter(
       (t) => t !== 'macro' && !t.startsWith('deck.') && actionBehavior(actionMeta(t).create()) === 'press',
     ),
   );

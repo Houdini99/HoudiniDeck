@@ -1,6 +1,7 @@
 // A small fake obs-websocket v5 server (JSON protocol) for tests and for UI work without OBS.
 // Run it with `npm run mock-obs` (ws://127.0.0.1:4456). Only implements what the deck uses.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -589,21 +590,35 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
 
 if (import.meta.main) {
   const port = Number(process.env.MOCK_OBS_PORT ?? 4456);
+  const controlPort = Number(process.env.MOCK_OBS_CONTROL_PORT ?? port + 1);
   const password = process.env.MOCK_OBS_PASSWORD || undefined;
   let mock: MockObs | null = await startMockObs({ port, password });
   console.log(`Mock OBS listening on ${mock.url} (${password ? 'password required' : 'no password'})`);
-  console.log(`Simulate OBS quitting/restarting with: kill -USR2 ${process.pid}`);
+  const toggleUrl = `http://127.0.0.1:${controlPort}/toggle`;
+  console.log(
+    process.platform === 'win32'
+      ? `Simulate OBS quitting/restarting with: curl ${toggleUrl}`
+      : `Simulate OBS quitting/restarting with: kill -USR2 ${process.pid}  (or: curl ${toggleUrl})`,
+  );
   setInterval(() => {}, 1 << 30); // stay alive while "OBS" is stopped
-  process.on('SIGUSR2', async () => {
-    if (mock) {
-      await mock.close();
-      mock = null;
-      console.log('Mock OBS stopped (send SIGUSR2 again to start it)');
-    } else {
+  let toggling = Promise.resolve('');
+  const toggle = () =>
+    (toggling = toggling.then(async () => {
+      if (mock) {
+        await mock.close();
+        mock = null;
+        return 'Mock OBS stopped (toggle again to start it)';
+      }
       mock = await startMockObs({ port, password });
-      console.log('Mock OBS started again (fresh state)');
-    }
-  });
+      return 'Mock OBS started again (fresh state)';
+    }));
+  const report = (message: string) => (console.log(message), message);
+  // Windows has no SIGUSR2, so the toggle is also a URL (on this PC only).
+  createServer((req, res) => {
+    if (req.url !== '/toggle') return void res.writeHead(404).end('Try /toggle\n');
+    void toggle().then((message) => res.end(`${report(message)}\n`));
+  }).listen(controlPort, '127.0.0.1');
+  if (process.platform !== 'win32') process.on('SIGUSR2', () => void toggle().then(report));
   const stop = () => void (mock?.close() ?? Promise.resolve()).then(() => process.exit(0));
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);

@@ -1,5 +1,5 @@
 // Derives how a button should look from its action and the live OBS state. Pure; runs in the browser.
-import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon } from './actions-meta.ts';
+import { COLORS, actionActiveBg, actionActiveIcon, actionAutoLabel, actionIcon, actionSupported } from './actions-meta.ts';
 import { followedPlayer, type ExtState, type StatMetric, type StatsState } from './ext-types.ts';
 import { mulToPos } from './fader.ts';
 import { formatDb, formatDuration } from './format.ts';
@@ -15,6 +15,8 @@ export interface VisualCtx {
   now: number;
   /** Whether the server runs Run Command buttons (they're dimmed otherwise). */
   commands?: boolean;
+  /** The server's operating system; buttons it can't run (e.g. KDE shortcuts on Windows) are dimmed. */
+  platform?: string;
 }
 
 export type Tone = 'live' | 'rec' | 'paused' | 'busy';
@@ -102,6 +104,7 @@ function statsStatus(metric: StatMetric, stats: StatsState): ActionStatus {
 
 export function actionStatus(action: Action, ctx: VisualCtx): ActionStatus {
   const { obs, deck, ext, now } = ctx;
+  if (!actionSupported(action.type, ctx.platform)) return { active: false, disabled: true };
   if (action.type.startsWith('obs.') && obs.connection !== 'connected') return { active: false, offline: true };
 
   switch (action.type) {

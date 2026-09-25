@@ -1,10 +1,13 @@
-// Reads the default speaker and microphone volume with `wpctl get-volume` (PipeWire), every few
-// seconds while a browser is connected and the deck has System Volume buttons.
+// Reads the default speaker and microphone volume with `wpctl get-volume` (PipeWire), or on Windows
+// through the helper (windows/volume.ts), every few seconds while a browser is connected and the deck
+// has System Volume buttons.
 import type { AudioDevice, AudioTarget } from '../../shared/ext-types.ts';
 import type { Deck } from '../../shared/schema.ts';
 import type { ExtStore } from '../ext-store.ts';
-import type { Logger } from '../log.ts';
+import { errorMessage, type Logger } from '../log.ts';
 import type { Runner } from './process.ts';
+import { HelperUnavailableError, type WinRequester } from './windows/helper.ts';
+import { readWindowsVolume } from './windows/volume.ts';
 
 const POLL_MS = 2000;
 
@@ -39,6 +42,8 @@ export function audioTargets(deck: Deck): AudioTarget[] {
 export interface AudioWatcherDeps {
   store: ExtStore;
   run: Runner;
+  /** On Windows: the helper, which reads the volumes instead of wpctl. */
+  windows?: WinRequester;
   log: Logger;
   pollMs?: number;
 }
@@ -128,22 +133,28 @@ export class AudioWatcher {
   private async read(target: AudioTarget): Promise<void> {
     let device: AudioDevice | null = null;
     try {
-      const res = await this.deps.run('wpctl', ['get-volume', AUDIO_DEVICE_IDS[target]]);
-      if (res.code === 0) device = parseVolume(res.stdout);
-      else this.deps.log.debug(`wpctl get-volume ${target} failed: ${res.stderr.trim() || `exit code ${res.code}`}`);
+      device = this.deps.windows ? await readWindowsVolume(this.deps.windows, target) : await this.readWpctl(target);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        this.deps.log.warn('wpctl is not installed, so System Volume buttons won’t work');
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT' || err instanceof HelperUnavailableError) {
+        const why = this.deps.windows ? errorMessage(err) : 'wpctl is not installed';
+        this.deps.log.warn(`${why}, so System Volume buttons won’t work`);
         this.audio.available = false;
         this.sync();
         this.deps.store.changed();
         return;
       }
-      this.deps.log.debug(`Could not run wpctl: ${(err as Error).message}`);
+      this.deps.log.debug(`Could not read the ${target} volume: ${errorMessage(err)}`);
     }
     if (!this.running || !this.targets.includes(target)) return; // stopped while reading
     if (same(this.audio[target], device)) return;
     this.audio[target] = device;
     this.deps.store.changed();
+  }
+
+  private async readWpctl(target: AudioTarget): Promise<AudioDevice | null> {
+    const res = await this.deps.run('wpctl', ['get-volume', AUDIO_DEVICE_IDS[target]]);
+    if (res.code === 0) return parseVolume(res.stdout);
+    this.deps.log.debug(`wpctl get-volume ${target} failed: ${res.stderr.trim() || `exit code ${res.code}`}`);
+    return null;
   }
 }

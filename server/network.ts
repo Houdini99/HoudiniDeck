@@ -1,24 +1,32 @@
 import os from 'node:os';
 
-// Container/VM bridges aren't reachable from phones on the LAN.
+// Container/VM bridges aren't reachable from phones on the LAN. Linux names, then Windows' adapter
+// names (Hyper-V and WSL add "vEthernet (…)" adapters; VirtualBox and VMware add their own).
 const VIRTUAL_IFACE = /^(lo|docker|br-|virbr|veth|podman|cni|vmnet|vboxnet)/;
+const VIRTUAL_IFACE_WINDOWS = /^vEthernet\b|VirtualBox|VMware|Hyper-V|Loopback/i;
+// Ethernet and Wi-Fi: en*/eth*/wl* on Linux; "Ethernet 2", "Wi-Fi" or (German) "WLAN" on Windows.
 const PHYSICAL_IFACE = /^(en|eth|wl)/;
+const PHYSICAL_IFACE_WINDOWS = /^(Ethernet|Wi-?Fi|WLAN)\b/i;
+
+type Interfaces = ReturnType<typeof os.networkInterfaces>;
 
 /** IPv4 addresses other devices can use, physical interfaces (ethernet/wifi) first. */
-export function lanAddresses(): string[] {
+export function lanAddresses(interfaces: Interfaces = os.networkInterfaces()): string[] {
   const found: { address: string; rank: number }[] = [];
-  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
-    if (!addrs || VIRTUAL_IFACE.test(name)) continue;
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (!addrs || VIRTUAL_IFACE.test(name) || VIRTUAL_IFACE_WINDOWS.test(name)) continue;
+    const rank = PHYSICAL_IFACE.test(name) || PHYSICAL_IFACE_WINDOWS.test(name) ? 0 : 1;
     for (const a of addrs) {
-      if (a.family === 'IPv4' && !a.internal) found.push({ address: a.address, rank: PHYSICAL_IFACE.test(name) ? 0 : 1 });
+      // 169.254.x.x: a link-local address from a cable or adapter that didn't get one from the router.
+      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) found.push({ address: a.address, rank });
     }
   }
   return found.sort((x, y) => x.rank - y.rank).map((x) => x.address);
 }
 
-/** avahi announces the hostname as <hostname>.local. */
+/** avahi (Linux) and Windows 10/11 both answer for <hostname>.local on the LAN. */
 export function mdnsHost(): string {
-  return `${os.hostname()}.local`;
+  return `${os.hostname().toLowerCase()}.local`;
 }
 
 export function reachableUrls(port: number): string[] {

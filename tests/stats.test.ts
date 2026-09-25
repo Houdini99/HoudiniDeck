@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { ExtStore } from '../server/ext-store.ts';
 import { silentLogger } from '../server/log.ts';
 import type { Runner } from '../server/system/process.ts';
-import { StatsWatcher, cpuPercent, parseMeminfo, parseNvidiaSmi, parseProcStat } from '../server/system/stats.ts';
+import { StatsWatcher, cpuPercent, cpuTimesOf, parseMeminfo, parseNvidiaSmi, parseProcStat } from '../server/system/stats.ts';
 import { emptyExtState, type StatMetric, type StatsState } from '../shared/ext-types.ts';
 import { buttonVisual } from '../shared/feedback.ts';
 import { emptyObsState } from '../shared/obs-types.ts';
@@ -60,7 +60,7 @@ async function fakeSystem(t: { after: (fn: () => Promise<void>) => void }) {
     return { code: 0, stdout: SMI, stderr: '' };
   };
   const store = new ExtStore();
-  const watcher = new StatsWatcher({ store, run, log: silentLogger, procRoot: proc, hwmonRoot: hwmon, pollMs: 40 });
+  const watcher = new StatsWatcher({ store, run, log: silentLogger, procRoot: proc, hwmonRoot: hwmon, pollMs: 40, platform: 'linux' });
   t.after(async () => watcher.stop());
   return { proc, smiCalls, store, watcher, stats: () => store.state.stats, setSmi: (s: typeof smi) => (smi = s) };
 }
@@ -105,6 +105,25 @@ test('without nvidia-smi, GPU tiles say n/a and it is not tried again', async (t
 const deck: Deck = { version: 1, revision: 0, homePageId: 'p', pages: [{ id: 'p', name: 'P', rows: 1, cols: 1, buttons: {} }] };
 const tile = (metric: StatMetric, stats: StatsState) =>
   buttonVisual({ id: 's', tap: { type: 'system.stats', metric } }, { obs: emptyObsState(), deck, ext: { ...emptyExtState(), stats }, now: 0 });
+
+test('without /proc (Windows), CPU and memory come from Node; the CPU temperature is n/a', async (t) => {
+  const times = (user: number, idle: number) => ({ times: { user, nice: 0, sys: 0, idle, irq: 0 } });
+  assert.deepEqual(cpuTimesOf([times(30, 70), times(10, 90)]), { busy: 40, total: 200 });
+  assert.equal(cpuTimesOf([]), null);
+
+  const store = new ExtStore();
+  const run: Runner = async () => ({ code: 0, stdout: SMI, stderr: '' });
+  // Paths that don't exist: nothing may be read from them.
+  const watcher = new StatsWatcher({ store, run, log: silentLogger, procRoot: '/no/proc', hwmonRoot: '/no/hwmon', pollMs: 40, platform: 'win32' });
+  t.after(() => watcher.stop());
+  watcher.setWanted(['cpu', 'memory', 'cpuTemp', 'gpu']);
+  await waitFor(() => typeof store.state.stats.cpu === 'number', 2000, 'CPU load');
+  const { cpu, memory, cpuTemp, gpu } = store.state.stats;
+  assert.ok(cpu! >= 0 && cpu! <= 100);
+  assert.ok(memory!.total > 0 && memory!.used > 0 && memory!.used <= memory!.total);
+  assert.equal(cpuTemp, null);
+  assert.deepEqual(gpu, { util: 37, temp: 52, memUsed: 2048, memTotal: 16376 }, 'nvidia-smi works the same');
+});
 
 test('stats tiles show the value, a bar, and warm/hot colors', () => {
   assert.deepEqual(tile('cpu', { cpu: 42.4 }).gauge, { text: '42%', detail: undefined, level: 0.424, tone: undefined });

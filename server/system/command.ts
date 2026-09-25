@@ -1,5 +1,6 @@
-// Runs the shell commands of Run Command buttons (only when STREAMDECK_ENABLE_COMMANDS=1).
-import { spawn } from 'node:child_process';
+// Runs the shell commands of Run Command buttons (only when STREAMDECK_ENABLE_COMMANDS=1):
+// with `sh -c` on Linux, and with `cmd.exe /d /s /c` on Windows (as Node's own `shell: true` does).
+import { execFile, spawn, type SpawnOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -22,9 +23,32 @@ function commandEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-/** Stop the command and everything it started (it leads its own process group). */
+const isWindows = process.platform === 'win32';
+
+/** Exit codes of a shell whose command doesn't exist: sh says 127, cmd.exe 9009. */
+export const NOT_FOUND_CODES: readonly number[] = [127, 9009];
+
+/** The shell and its arguments for a command line. */
+export function shellCommand(command: string, platform: NodeJS.Platform = process.platform): { file: string; args: string[] } {
+  if (platform === 'win32') {
+    // /d: no AutoRun macros; /s /c "…": run the line between the outer quotes exactly as typed.
+    return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${command}"`] };
+  }
+  return { file: 'sh', args: ['-c', command] };
+}
+
+function spawnShell(command: string, opts: SpawnOptions) {
+  const { file, args } = shellCommand(command);
+  return spawn(file, args, { cwd: homedir(), env: commandEnv(), windowsVerbatimArguments: isWindows, ...opts });
+}
+
+/** Stop the command and everything it started: its process group on Linux, its process tree on Windows. */
 function killGroup(pid: number | undefined): void {
   if (!pid) return;
+  if (isWindows) {
+    execFile('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true }, () => {});
+    return;
+  }
   try {
     process.kill(-pid, 'SIGTERM');
   } catch {
@@ -33,17 +57,19 @@ function killGroup(pid: number | undefined): void {
 }
 
 /**
- * Run `sh -c command` and wait for it. Programs it starts in the background may keep running;
+ * Run the command in the shell and wait for it. Programs it starts in the background may keep running;
  * the result comes when the shell itself exits.
  */
 export function runCommand(command: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', command], { cwd: homedir(), env: commandEnv(), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Linux: its own process group, so a timeout can stop everything it started. Windows: no console
+    // window popping up (detached would open one there); taskkill /t finds the whole tree instead.
+    const child = spawnShell(command, { detached: !isWindows, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    child.stdout.on('data', (chunk: Buffer) => (stdout = (stdout + chunk).slice(-OUTPUT_KEPT)));
-    child.stderr.on('data', (chunk: Buffer) => (stderr = (stderr + chunk).slice(-OUTPUT_KEPT)));
+    child.stdout!.on('data', (chunk: Buffer) => (stdout = (stdout + chunk).slice(-OUTPUT_KEPT)));
+    child.stderr!.on('data', (chunk: Buffer) => (stderr = (stderr + chunk).slice(-OUTPUT_KEPT)));
     const timer = setTimeout(() => {
       timedOut = true;
       killGroup(child.pid);
@@ -66,12 +92,13 @@ export function runCommand(command: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_
 }
 
 /**
- * Start `sh -c command` without waiting for it (for apps). Rejects if it can't start, and
- * resolves with the exit code if it stops within a second (e.g. 127: command not found).
+ * Start the command without waiting for it (for apps). Rejects if it can't start, and resolves
+ * with the exit code if it stops within a second (e.g. 127 or 9009: command not found).
  */
 export function launchCommand(command: string): Promise<number | null> {
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', command], { cwd: homedir(), env: commandEnv(), detached: true, stdio: 'ignore' });
+    // detached: on Windows this also keeps the app running when the deck stops (Node would end it otherwise).
+    const child = spawnShell(command, { detached: true, stdio: 'ignore' });
     const timer = setTimeout(() => {
       child.unref();
       resolve(null); // still running: started fine
@@ -89,6 +116,6 @@ export function launchCommand(command: string): Promise<number | null> {
 
 /** The last few lines of a command's output, for a toast. */
 export function outputTail(text: string, lines = 3, maxChars = 300): string {
-  const tail = text.trim().split('\n').slice(-lines).join('\n');
+  const tail = text.trim().split(/\r?\n/).slice(-lines).join('\n');
   return tail.length > maxChars ? `…${tail.slice(-maxChars)}` : tail;
 }

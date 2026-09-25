@@ -36,7 +36,7 @@ async function printBanner(key: string, obsUrl: string): Promise<void> {
 
 /** Apps started by Run Command buttons need the desktop session's variables (e.g. under systemd). */
 function checkCommandEnvironment(): void {
-  if (!env.commandsEnabled) return;
+  if (!env.commandsEnabled || process.platform !== 'linux') return;
   const missing = [];
   if (!process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) missing.push('WAYLAND_DISPLAY');
   if (!process.env.DBUS_SESSION_BUS_ADDRESS) missing.push('DBUS_SESSION_BUS_ADDRESS');
@@ -52,8 +52,17 @@ async function main(): Promise<void> {
   try {
     app = await startApp(env);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EADDRINUSE') {
       log.error(`Port ${env.port} is already in use. Is another copy running? Set PORT to use a different one.`);
+      process.exit(1);
+    }
+    if (code === 'EACCES' && process.platform === 'win32') {
+      // Hyper-V and WSL reserve ranges of ports, and Windows then refuses them to everyone else.
+      log.error(
+        `Windows doesn't allow port ${env.port} (it may be reserved; see: netsh interface ipv4 show excludedportrange protocol=tcp). ` +
+          'Set PORT to use a different one.',
+      );
       process.exit(1);
     }
     throw err;
@@ -72,6 +81,8 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  // Closing the terminal window (on Windows, the console window).
+  process.on('SIGHUP', () => void shutdown('SIGHUP'));
 }
 
 main().catch((err) => {

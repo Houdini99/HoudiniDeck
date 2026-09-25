@@ -15,6 +15,8 @@ export interface ServerInfo {
   urls: string[];
   /** Whether Run Command buttons work (the server was started with STREAMDECK_ENABLE_COMMANDS=1). */
   commands: boolean;
+  /** The server's operating system (Node's process.platform: 'linux', 'win32', …); some actions only work on some. */
+  platform: string;
 }
 
 export interface PairingInfo {
