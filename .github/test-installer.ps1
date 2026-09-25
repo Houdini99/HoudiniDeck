@@ -85,3 +85,5 @@ try {
   Stop-Process -Id $mock.Id -Force -ErrorAction SilentlyContinue
 }
 Write-Host 'The installer and uninstaller work.'
+# The last netsh (no such rule, as it should be) left exit code 1 behind.
+exit 0
