@@ -3,6 +3,7 @@
   import { prettyHotkey } from '$shared/format.ts';
   import { resolveSceneOrGroupName, resolveSourceName } from '$shared/obs-resolve.ts';
   import { MEDIA_INPUT_KINDS } from '$shared/obs-types.ts';
+  import type { KdeComponent } from '$shared/protocol.ts';
   import type { Action, MacroStep, ObsRef } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
   import HeadersField from './HeadersField.svelte';
@@ -35,6 +36,16 @@
       .catch(() => {});
   });
 
+  let kde = $state<KdeComponent[] | null>(null);
+  $effect(() => {
+    if (kde !== null || !meta.fields.some((f) => f.kind === 'kdeComponent')) return;
+    kde = [];
+    store
+      .request<{ components: KdeComponent[] }>({ t: 'query', q: 'kdeShortcuts' })
+      .then((r) => (kde = r.components))
+      .catch(() => {});
+  });
+
   let players = $state<string[] | null>(null);
   $effect(() => {
     if (players !== null || !meta.fields.some((f) => f.kind === 'mediaPlayer')) return;
@@ -53,6 +64,11 @@
     const deck = store.deck;
     if (field.kind === 'page') return (deck?.pages ?? []).map((p) => ({ value: p.id, label: p.name }));
     if (field.kind === 'mediaPlayer') return (players ?? []).map((p) => ({ value: p, label: p }));
+    if (field.kind === 'kdeComponent') return (kde ?? []).map((c) => ({ value: c.id, label: c.name }));
+    if (field.kind === 'kdeShortcut') {
+      const component = kde?.find((c) => c.id === values[field.dependsOn!]);
+      return (component?.shortcuts ?? []).map((s) => ({ value: s.id, label: s.name }));
+    }
     if (!obs) return [];
     const inputs = Object.values(obs.inputs);
     const scenes = obs.scenes.map((s) => refOption(s.name, s.uuid));
@@ -112,6 +128,9 @@
     } else {
       target[field.key] = raw === '' && field.optional ? undefined : raw;
     }
+    // A KDE shortcut keeps its friendly name for the label.
+    if (field.kind === 'kdeShortcut') target.title = opts.find((o) => o.value === raw)?.label;
+    if (field.kind === 'kdeComponent') target.title = undefined;
     // Picking a different scene/source invalidates whatever was chosen below it.
     for (const dep of meta.fields.filter((f) => f.dependsOn === field.key)) {
       target[dep.key] = REF_KINDS.has(dep.kind) ? { name: '' } : '';
@@ -120,6 +139,14 @@
 
   function setRaw(field: FieldDef, value: unknown): void {
     (action as unknown as Record<string, unknown>)[field.key] = value;
+  }
+
+  /** A text box for a field whose choices depend on another one, while there's nothing to choose. */
+  function locked(field: FieldDef, opts: Option[]): boolean {
+    if (!field.dependsOn || opts.length > 0 || field.kind === 'text') return false;
+    // KDE: with the list loaded, pick the app first; without it, names can be typed.
+    if (field.kind === 'kdeShortcut') return !!kde?.length && !values[field.dependsOn];
+    return online;
   }
 
   function placeholder(field: FieldDef): string {
@@ -195,7 +222,7 @@
           type="text"
           {value}
           placeholder={placeholder(field)}
-          disabled={online && !!field.dependsOn && opts.length === 0 && field.kind !== 'text'}
+          disabled={locked(field, opts)}
           onchange={(e) => setValue(field, e.currentTarget.value.trim(), opts)}
         />
       {:else}

@@ -16,6 +16,7 @@ import { ObsBridge } from './obs/bridge.ts';
 import { DeckStore } from './store/deck-store.ts';
 import { SettingsStore } from './store/settings-store.ts';
 import { AudioWatcher } from './system/audio.ts';
+import { listKdeShortcuts } from './system/kde.ts';
 import { MediaWatcher } from './system/media.ts';
 import { runProcess, spawnLines } from './system/process.ts';
 import { StatsWatcher } from './system/stats.ts';
@@ -84,6 +85,7 @@ export async function startApp(env: Env): Promise<App> {
     media,
     audio,
     stats,
+    kdeShortcuts: () => listKdeShortcuts(runProcess),
     dispatcher,
     buildId: await readBuildId(env.webDist),
     info: () => ({ version, hostname: os.hostname(), urls: reachableUrls(env.publicPort), commands: env.commandsEnabled }),

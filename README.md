@@ -13,6 +13,7 @@ A self-hosted Stream Deck for OBS that runs in the browser. It runs on the PC wi
   - The PC's own volume: mute or step the default speakers or microphone, or drag a fader.
   - Live system stats tiles: CPU load and temperature, memory, and NVIDIA GPU load, temperature and memory.
   - Keyboard shortcuts sent to the PC, optionally held while you hold the button (push-to-talk).
+  - Any KDE Plasma global shortcut (Overview, Spectacle, Mute Microphone, …), picked from a list. Needs no setup.
 - **Macros:** one button runs several actions in a row, with pauses, e.g. switch scene, unmute the mic, start recording.
 - **Run Command (off by default):** a button starts a program or script on the PC. See [Security](#security).
   - Webhook buttons that send an HTTP request, e.g. to Home Assistant, Streamer.bot or a Philips Hue bridge.
@@ -181,7 +182,7 @@ deploy/   systemd user unit
 3. **Executor:** handle it on the server. Each `type` prefix (`obs`, `http`, …) has one executor in `server/actions/`, and `server/actions/registry.ts` lists them all. OBS actions live in `server/obs/execute.ts`.
 4. **Active state (optional):** if the button should light up, add a case to `actionStatus` in `shared/feedback.ts`. State from outside OBS goes into `ExtState` (`shared/ext-types.ts`), which the server pushes to every browser.
 
-The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: KDE global shortcuts without ydotool, Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The editor, validation and multi-device sync pick it up automatically. What's planned next (Phase 3: Discord mute) is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Troubleshooting
 

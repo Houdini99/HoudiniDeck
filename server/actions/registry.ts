@@ -7,6 +7,7 @@ import type { MediaWatcher } from '../system/media.ts';
 import type { Runner } from '../system/process.ts';
 import { runAction, type ExecutorRegistry } from './executor.ts';
 import { httpExecutor } from './http.ts';
+import { kdeExecutor } from './kde.ts';
 import { macroExecutor } from './macro.ts';
 import { mediaExecutor } from './media.ts';
 import { obsExecutor } from './obs.ts';
@@ -33,6 +34,7 @@ export function createExecutors(deps: ExecutorDeps): ExecutorRegistry {
     http: httpExecutor(deps.log),
     media: mediaExecutor(deps.run, deps.media),
     system: systemExecutor({ run: deps.run, audio: deps.audio, commandsEnabled: deps.commandsEnabled }),
+    kde: kdeExecutor(deps.run),
     // Macro steps run through this same registry.
     macro: macroExecutor({ run: (action, phase) => runAction(registry, action, phase), log: deps.log }),
     // Navigation happens in the browser, which never sends these; a stale client's press is a no-op.

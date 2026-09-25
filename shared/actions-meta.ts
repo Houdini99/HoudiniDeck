@@ -56,6 +56,8 @@ export type FieldKind =
   | 'mediaPlayer'
   | 'macroSteps'
   | 'keys'
+  | 'kdeComponent'
+  | 'kdeShortcut'
   | 'page'
   | 'hotkey'
   | 'collection'
@@ -583,6 +585,19 @@ export const ACTION_META: MetaTable = {
     ],
     create: () => ({ type: 'system.hotkey', keys: [] }),
     autoLabel: (a) => shortcutLabel(a.keys) || 'Shortcut',
+  },
+  'kde.shortcut': {
+    type: 'kde.shortcut',
+    label: 'KDE Shortcut',
+    description: 'Trigger a KDE Plasma global shortcut, e.g. Overview, a Spectacle screenshot or Mute Microphone. Needs no setup.',
+    category: 'System',
+    icon: { set: 'simple-icons', name: 'kde' },
+    fields: [
+      { key: 'component', label: 'App', kind: 'kdeComponent', placeholder: 'e.g. kwin' },
+      { key: 'shortcut', label: 'Shortcut', kind: 'kdeShortcut', dependsOn: 'component', placeholder: 'e.g. Overview' },
+    ],
+    create: () => ({ type: 'kde.shortcut', component: '', shortcut: '' }),
+    autoLabel: (a) => a.title || a.shortcut || 'KDE Shortcut',
   },
   'system.command': {
     type: 'system.command',

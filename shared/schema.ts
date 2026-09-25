@@ -116,6 +116,15 @@ const StepActionSchema = z.discriminatedUnion('type', [
     hold: z.boolean().optional(),
   }),
   z.object({
+    type: z.literal('kde.shortcut'),
+    /** kglobalaccel component, e.g. "kwin" or "org.kde.spectacle.desktop". */
+    component: z.string().trim().min(1).max(200),
+    /** The shortcut's unique name in that component, e.g. "Overview". */
+    shortcut: z.string().trim().min(1).max(200),
+    /** Its friendly name, shown as the default label. */
+    title: z.string().max(200).optional(),
+  }),
+  z.object({
     type: z.literal('system.command'),
     /** Run with `sh -c` in the home folder. */
     command: z.string().trim().min(1).max(4000),
@@ -269,7 +278,7 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hold'), pageId: Id, buttonId: Id, down: z.boolean() }),
   z.object({ t: z.literal('fader'), pageId: Id, buttonId: Id, pos: z.number().min(0).max(1) }),
   z.object({ t: z.literal('op'), reqId: ReqId, op: DeckOpSchema }),
-  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers']) }),
+  z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers', 'kdeShortcuts']) }),
   z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),

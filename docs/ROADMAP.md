@@ -106,7 +106,11 @@ For each action type:
   - **Editor:** `KeysField.svelte` has Ctrl/Shift/Alt/Super toggles plus a grouped key list (works on touch screens), and a recorder for a physical keyboard. Keys are positions on a US layout (Y/Z swap on German keyboards); recording gets that right.
   - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`). `/dev/uinput` is already writable for the user via ACL.
   - **Still to check on the PC** after that setup.
-- [ ] **`kde.shortcut`** (alternative that needs no setup): call `qdbus6 org.kde.kglobalaccel /component/<component> invokeShortcut <name>`. A picker could list components and shortcut names via kglobalaccel's D-Bus API.
+- [x] **`kde.shortcut`** `{ component, shortcut, title? }` (the alternative that needs no setup), in `server/system/kde.ts`. It uses `busctl --user --json=short -- call org.kde.kglobalaccel …` instead of qdbus6: busctl comes with systemd and prints JSON.
+  - Checked against kglobalacceld's source: the component path is `/component/<unique name>` with anything outside `A–Z a–z 0–9 _` turned into `_`, and `allShortcutInfos` returns `a(ssssssaiai)` starting with unique name, friendly name, component unique, component friendly.
+  - `invokeShortcut` silently ignores unknown names, so a press checks `shortcutNames` first and reports a missing shortcut.
+  - The editor lists apps and shortcuts by friendly name (query `kdeShortcuts`: `allComponents` + `allShortcutInfos`). Without Plasma, both are text boxes.
+  - **Still to check on the PC** (Plasma 6).
 - [ ] **`discord.voice`:** `{ mode: toggleMute|toggleDeafen }` through Discord's local RPC.
   - **Setup (the user does it):**
     1. Create an application at discord.com/developers.

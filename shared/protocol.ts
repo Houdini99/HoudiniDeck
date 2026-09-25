@@ -31,6 +31,18 @@ export interface SettingsView {
 
 export type ToastLevel = 'info' | 'error';
 
+/** KDE global shortcuts by app, for the KDE Shortcut editor (query 'kdeShortcuts'). */
+export interface KdeShortcut {
+  id: string;
+  name: string;
+}
+
+export interface KdeComponent {
+  id: string;
+  name: string;
+  shortcuts: KdeShortcut[];
+}
+
 export type ServerMsg =
   | { t: 'hello'; protocol: number; needsAuth: boolean }
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }

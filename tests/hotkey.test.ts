@@ -67,7 +67,7 @@ test('held keys are released when the device that holds them disconnects', async
     pages: [{ id: 'p', name: 'P', rows: 1, cols: 1, buttons: { '0-0': { id: 'ptt', tap: { ...ctrlM, hold: true } } } }],
   };
   const unused = async () => {};
-  const executors = { system: execute, obs: unused, http: unused, media: unused, macro: unused, deck: unused } as ExecutorRegistry;
+  const executors = { system: execute, obs: unused, http: unused, media: unused, kde: unused, macro: unused, deck: unused } as ExecutorRegistry;
   const dispatcher = new Dispatcher({ executors, getDeck: () => deck, log: silentLogger });
   await dispatcher.hold('tablet', 'p', 'ptt', true);
   await dispatcher.releaseAll('tablet');

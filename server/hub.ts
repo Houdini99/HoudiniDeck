@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
 import type { StatMetric } from '../shared/ext-types.ts';
-import { CLOSE, PROTOCOL_VERSION, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
+import { CLOSE, PROTOCOL_VERSION, type KdeComponent, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
 import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
 import { ActionError } from './actions/executor.ts';
@@ -48,6 +48,8 @@ export interface HubDeps {
   media: MediaWatcher;
   audio: AudioWatcher;
   stats: StatsWatcher;
+  /** Lists KDE's global shortcuts for the editor. */
+  kdeShortcuts: () => Promise<KdeComponent[]>;
   dispatcher: Dispatcher;
   buildId: string;
   info: () => ServerInfo;
@@ -231,7 +233,7 @@ export class Hub {
     return next;
   }
 
-  private async query(q: 'hotkeys' | 'mediaPlayers'): Promise<unknown> {
+  private async query(q: 'hotkeys' | 'mediaPlayers' | 'kdeShortcuts'): Promise<unknown> {
     const { bridge, media } = this.deps;
     switch (q) {
       case 'hotkeys': {
@@ -241,6 +243,8 @@ export class Hub {
       }
       case 'mediaPlayers':
         return { players: await media.listPlayers() };
+      case 'kdeShortcuts':
+        return { components: await this.deps.kdeShortcuts() };
     }
   }
 
