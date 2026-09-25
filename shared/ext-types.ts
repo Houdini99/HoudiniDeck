@@ -4,7 +4,7 @@
 export type PlayerStatus = 'Playing' | 'Paused' | 'Stopped';
 
 export interface PlayerInfo {
-  /** playerctl's name for the player, e.g. "spotify" or "firefox.instance_1234". */
+  /** playerctl's name for the player, e.g. "spotify" or "firefox.instance_1234" (on Windows: "spotify", "chrome", …). */
   instance: string;
   status: PlayerStatus;
   artist: string;
@@ -14,7 +14,7 @@ export interface PlayerInfo {
 }
 
 export interface MediaState {
-  /** false when playerctl isn't installed (or can't reach the session bus). */
+  /** false when playerctl isn't installed (or can't reach the session bus), or Windows' media controls can't be read. */
   available: boolean;
   /**
    * What each followed player is doing, by the name buttons use: '' is whichever player was active
@@ -32,7 +32,7 @@ export interface AudioDevice {
 }
 
 export interface AudioState {
-  /** false when wpctl isn't installed. */
+  /** false when wpctl isn't installed (on Windows: when the helper can't start). */
   available: boolean;
   /** The default speakers and microphone. Missing until read; null when there is no such device. */
   output?: AudioDevice | null;
@@ -48,7 +48,7 @@ export interface StatsState {
   cpu?: number | null;
   /** In bytes. */
   memory?: { used: number; total: number } | null;
-  /** °C, from the CPU's temperature sensor (k10temp or coretemp). */
+  /** °C, from the CPU's temperature sensor (k10temp or coretemp). Linux only. */
   cpuTemp?: number | null;
   /** NVIDIA GPU via nvidia-smi: load in percent, °C, memory in MiB. */
   gpu?: { util: number; temp: number; memUsed: number; memTotal: number } | null;

@@ -1,6 +1,6 @@
 # Roadmap
 
-Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work.
+Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work. The deck also runs on Windows 10/11 (see "Windows support" below).
 
 ## 0. Before anything new: verify on the real PC
 
@@ -26,6 +26,29 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **KDE shortcuts:** the list in the editor, and pressing e.g. KWin → Overview.
   - **Run Command:** only if the user wants it. Start the deck with `STREAMDECK_ENABLE_COMMANDS=1`; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
 
+- [ ] **Check on a real Windows 11 PC.** CI (`.github/workflows/ci.yml`) runs the tests, the real PowerShell helper and a start-up smoke test on a Windows runner, but that has no speakers, players or desktop. On the PC:
+  - `npm install`, `npm run build`, `npm start` in PowerShell; the firewall question; pairing a phone (is the QR code's address the Wi-Fi/Ethernet one?).
+  - **System volume:** mute, step and fader for speakers and microphone; the buttons follow changes made in Windows.
+  - **Media keys** with Spotify and a browser: title, cover art, PAUSED badge, "whichever played last" (Windows' current session), and a button naming `spotify`.
+  - **Keyboard shortcuts:** e.g. Win+Shift+S, Ctrl+Shift+Esc, a hold button for push-to-talk in Discord, F13–F24 as OBS hotkeys, and Y/Z on a German layout.
+  - **Run Command:** a waiting command (`echo hi`), a failing one (the toast shows stderr), **Start an app** with `start "" notepad`, and a timeout.
+  - **Stats:** CPU, RAM, and the NVIDIA tiles; CPU temperature says n/a.
+  - `settings.json`: `icacls data\settings.json` lists only the user.
+  - Autostart through `deploy\windows\virtual-streamdeck.cmd` in the Startup folder.
+
+## Windows support (2026‑09‑25)
+
+Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program, Windows goes through **one helper**: `server/system/windows/helper.ps1`, a long-running Windows PowerShell 5.1 process that `helper.ts` (`WinHelper`) starts when first needed and again after it stops.
+
+- **Protocol:** JSON lines, `{ id, op, …args }` in and `{ id, ok, data | error }` out, plus `{ event: 'media', state }` while media is watched. Both sides escape everything outside ASCII, so no code page can garble a song title. Button parameters are only ever data in this JSON; no PowerShell code is built from them.
+- **Keep `helper.ps1` ASCII** (5.1 reads it in the ANSI code page) and its C# at **C# 5** (no `$"…"`, `?.`, `=>` members): that's what Add-Type compiles with.
+- **Ops:** `volume.get`/`volume.set` (Core Audio `IAudioEndpointVolume` of the default device), `keys` (SendInput), `media.state`/`media.control`/`media.watch` (WinRT `GlobalSystemMediaTransportControlsSessionManager`; cover art goes to `%TEMP%\houdinideck-art\`), `ping`.
+- **Keys** stay positions: the Linux codes in `shared/keys.ts` are the keyboard's scan codes up to F12, E0-extended ones are mapped in `windows/keys.ts`, and media keys, Pause, Num Lock and F13–F24 go as virtual-key codes. Taps hold the keys 50 ms, since OBS and games poll. Mic Mute has no Windows key.
+- **Which code runs:** `app.ts` creates the helper on `win32`; `AudioWatcher` and `systemExecutor` take it as `windows`, and `WindowsMediaWatcher` replaces `MediaWatcher` (both implement `MediaSource`). The helper only starts for decks with Media Keys buttons (while someone looks), System Volume buttons, or Keyboard Shortcut buttons (started early, so the first press doesn't wait for PowerShell).
+- **Elsewhere:** Run Command uses `cmd.exe /d /s /c` and `taskkill /t` (`system/command.ts`); stats use `os.cpus()`/`os.freemem()` instead of `/proc`, and CPU temperature is n/a; `settings.json` gets an owner-only ACL through `icacls`; `network.ts` skips `vEthernet (…)` and other virtual adapters.
+- **Platform-only actions:** `ACTION_META[type].platforms` (e.g. `['linux']` for `kde.shortcut`). `ServerInfo.platform` tells the browser: the editor doesn't offer such actions, and existing buttons are dimmed. Their executor refuses too.
+- **Tests:** `tests/windows.test.ts` covers the Windows code on any system (fake helper, a stand-in helper process in `tests/fake-win-helper.ts`); `tests/windows-helper.test.ts` runs the real helper and only runs on Windows.
+
 ## Phase 3: actions beyond OBS
 
 Goal: buttons that do things other than OBS (commands, webhooks, media keys, system volume, hotkeys, macros, Discord) plus a system-stats tile.
@@ -47,7 +70,7 @@ Goal: buttons that do things other than OBS (commands, webhooks, media keys, sys
 For each action type:
 
 1. **Schema:** add to `ActionSchema` in `shared/schema.ts`. Prefix the type by area: `system.*`, `http.*`, `media.*`, `macro`, `discord.*`.
-2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`. A field with `show` only appears (and is only required) while `show(action)` is true.
+2. **Editor entry:** add an entry to `ACTION_META` in `shared/actions-meta.ts`, with a new category such as `'System'` / `'Media'` / `'Integrations'` added to `CATEGORIES`. If it can't work on every system, set `platforms` (see "Windows support"), or give it a Windows path through the helper. The editor form is generated from its `fields`; new field kinds need a case in `web/src/editor/ActionForm.svelte`. A field with `show` only appears (and is only required) while `show(action)` is true.
 3. **Executor:** each family of actions (the type prefix: `obs`, `http`, …) has one executor, `(action, phase) => Promise<void>`, in its own file under `server/actions/` (`obs.ts`, `http.ts`, `media.ts`, …). Add it to `createExecutors()` in `server/actions/registry.ts`. The registry type lists every prefix, so a new prefix without an executor doesn't compile. Throw `ActionError` (from `server/actions/executor.ts`) for messages the user should see.
 4. **State (optional):** if the button lights up or shows live data, add a case to `actionStatus()` in `shared/feedback.ts`.
    - State that isn't OBS (now playing, system volume, stats) goes into `ExtState` in `shared/ext-types.ts`; add a field for the new slice.
@@ -62,7 +85,7 @@ For each action type:
   - In the executor: refuse with a clear message.
   - When saving the deck: `deck/ops.ts` / the hub rejects adding such actions while disabled.
 - **The web UI must not be able to switch this on.** Send the flag to clients in `ServerInfo` so the editor hides the category.
-- **Never build shell strings from button parameters for the fixed tools.** Use `execFile` with argument arrays for playerctl, wpctl, nvidia-smi and ydotool.
+- **Never build shell strings from button parameters for the fixed tools.** Use `execFile` with argument arrays for playerctl, wpctl, nvidia-smi and ydotool. On Windows, parameters go to the helper as JSON data, never as PowerShell code.
 - **Webhooks:** only `http:`/`https:` URLs, a 10 s timeout, and no following redirects to other schemes.
 
 ### Work items (suggested order: least system setup first)
@@ -124,7 +147,7 @@ For each action type:
     2. Add `http://localhost` as a redirect.
     3. Put the client ID and secret into Settings; the secret stays server-side in `settings.json` (0600).
   - **Flow:**
-    1. Connect to `$XDG_RUNTIME_DIR/discord-ipc-0` (framed JSON: op + length + payload).
+    1. Connect to `$XDG_RUNTIME_DIR/discord-ipc-0`, on Windows the named pipe `\\?\pipe\discord-ipc-0` (framed JSON: op + length + payload; Node's `net.connect` handles both).
     2. `AUTHORIZE` with scopes `rpc rpc.voice.read rpc.voice.write`; the user clicks Authorize in Discord once.
     3. Exchange the code for a token at `https://discord.com/api/oauth2/token`, then `AUTHENTICATE`.
     4. Toggle with `SET_VOICE_SETTINGS {mute}` / `{deaf}`.

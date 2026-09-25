@@ -58,10 +58,15 @@ test('SettingsStore generates a key once, keeps it, and only the user can read t
   assert.ok(first.settings.accessKey.length >= 40);
   assert.equal(first.settings.obs.url, 'ws://127.0.0.1:4455');
   if (process.platform === 'win32') {
-    // Windows ignores file modes; the access list must name this user and nobody else.
+    // Windows ignores file modes. Nothing may be inherited from the folder, and only this user may be
+    // listed, besides SYSTEM and Administrators (which can read any file anyway).
     const acl = execFileSync('icacls', [first.path], { encoding: 'utf8' });
-    assert.match(acl, new RegExp(`\\\\${process.env.USERNAME}:\\(F\\)`, 'i'));
-    assert.equal(acl.split(/\r?\n/).filter((line) => /:\(/.test(line)).length, 1, `only one entry:\n${acl}`);
+    const entries = [...acl.matchAll(/(\S+):\(/g)].map((m) => m[1]);
+    assert.doesNotMatch(acl, /\(I\)/, `nothing inherited:\n${acl}`);
+    assert.ok(entries.some((e) => e.toLowerCase().endsWith(`\\${process.env.USERNAME!.toLowerCase()}`)), acl);
+    for (const entry of entries) {
+      assert.match(entry, new RegExp(`\\\\(${process.env.USERNAME}|SYSTEM|Administrators)$`, 'i'), `unexpected entry in:\n${acl}`);
+    }
   } else {
     const mode = (await stat(first.path)).mode & 0o777;
     assert.equal(mode, 0o600);

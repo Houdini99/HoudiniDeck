@@ -1,7 +1,9 @@
 // Runs the shell commands of Run Command buttons (only when STREAMDECK_ENABLE_COMMANDS=1):
 // with `sh -c` on Linux, and with `cmd.exe /d /s /c` on Windows (as Node's own `shell: true` does).
 import { execFile, spawn, type SpawnOptions } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 /** How long a started app is watched for an immediate failure (e.g. "command not found"). */
@@ -26,7 +28,41 @@ function commandEnv(): NodeJS.ProcessEnv {
 const isWindows = process.platform === 'win32';
 
 /** Exit codes of a shell whose command doesn't exist: sh says 127, cmd.exe 9009. */
-export const NOT_FOUND_CODES: readonly number[] = [127, 9009];
+const NOT_FOUND_CODES: readonly number[] = [127, 9009];
+
+/** cmd.exe's own commands, which `where` can't find. */
+const CMD_BUILTINS = new Set(
+  'assoc break call cd chdir cls color copy date del dir echo endlocal erase exit for ftype goto if md mkdir mklink move path pause popd prompt pushd rd rem ren rename rmdir set setlocal shift start time title type ver verify vol'.split(
+    ' ',
+  ),
+);
+
+/** The program a command line starts: its first word, or the quoted path it starts with. */
+export function commandProgram(command: string): string {
+  const first = /^\s*(?:"([^"]*)"|([^\s&|<>()]+))/.exec(command);
+  return first?.[1] ?? first?.[2] ?? '';
+}
+
+/** Whether Windows finds the program a command starts, as cmd.exe would (its own commands count as found). */
+async function windowsProgramExists(command: string): Promise<boolean> {
+  const program = commandProgram(command);
+  if (!program || CMD_BUILTINS.has(program.toLowerCase())) return true;
+  if (/[\\/:]/.test(program)) {
+    const path = resolve(homedir(), program);
+    const extensions = ['', ...(process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';')];
+    return extensions.some((ext) => existsSync(path + ext));
+  }
+  return new Promise((done) => execFile('where', [program], { windowsHide: true }, (err) => done(!err)));
+}
+
+/**
+ * Whether a command that failed right away did so because its program doesn't exist. cmd.exe says
+ * 9009, but just 1 when it was started without a console (for apps), so Windows looks it up then.
+ */
+export async function commandNotFound(command: string, code: number, platform: NodeJS.Platform = process.platform): Promise<boolean> {
+  if (NOT_FOUND_CODES.includes(code)) return true;
+  return platform === 'win32' && !(await windowsProgramExists(command));
+}
 
 /** The shell and its arguments for a command line. */
 export function shellCommand(command: string, platform: NodeJS.Platform = process.platform): { file: string; args: string[] } {

@@ -4,7 +4,7 @@
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
 import { ydotoolKeyArgs } from '../../shared/keys.ts';
-import { DEFAULT_COMMAND_TIMEOUT_MS, NOT_FOUND_CODES, launchCommand, outputTail, runCommand } from '../system/command.ts';
+import { DEFAULT_COMMAND_TIMEOUT_MS, commandNotFound, commandProgram, launchCommand, outputTail, runCommand } from '../system/command.ts';
 import type { RunResult, Runner } from '../system/process.ts';
 import type { WinRequester } from '../system/windows/helper.ts';
 import { pressWindowsKeys } from '../system/windows/keys.ts';
@@ -78,9 +78,9 @@ async function runCommandAction(action: ActionOf<'system.command'>, enabled: boo
   if (!enabled) throw new ActionError('Running commands is turned off. Start the deck with STREAMDECK_ENABLE_COMMANDS=1 to allow it.');
   if (action.detached) {
     const code = await launchCommand(action.command);
-    if (code !== null && NOT_FOUND_CODES.includes(code)) throw new ActionError(`Command not found: ${action.command.trim().split(/\s+/)[0]}`);
-    if (code) throw new ActionError(`The command stopped right away (exit code ${code})`);
-    return;
+    if (!code) return; // still running, or done already
+    if (await commandNotFound(action.command, code)) throw new ActionError(`Command not found: ${commandProgram(action.command)}`);
+    throw new ActionError(`The command stopped right away (exit code ${code})`);
   }
   const timeoutMs = action.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const res = await runCommand(action.command, timeoutMs);

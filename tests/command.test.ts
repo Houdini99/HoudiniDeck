@@ -7,7 +7,7 @@ import { ActionError } from '../server/actions/executor.ts';
 import { systemExecutor } from '../server/actions/system.ts';
 import { OpError, applyOp } from '../server/deck/ops.ts';
 import { readEnv } from '../server/env.ts';
-import { outputTail, shellCommand } from '../server/system/command.ts';
+import { commandNotFound, commandProgram, outputTail, shellCommand } from '../server/system/command.ts';
 import { actionAutoLabel, availableActionTypes } from '../shared/actions-meta.ts';
 import { emptyExtState } from '../shared/ext-types.ts';
 import { buttonVisual } from '../shared/feedback.ts';
@@ -150,6 +150,19 @@ test('each system has its shell', () => {
   const cmdExe = shellCommand('echo "hi" && dir', 'win32');
   assert.deepEqual(cmdExe.args, ['/d', '/s', '/c', '"echo "hi" && dir"'], 'cmd.exe /s strips just the outer quotes');
   assert.equal(outputTail('one\r\ntwo\r\nthree\r\nfour\r\n'), 'two\nthree\nfour', 'Windows line ends');
+  assert.equal(commandProgram('  "C:\\Program Files\\app.exe" --x'), 'C:\\Program Files\\app.exe');
+  assert.equal(commandProgram('notepad&& echo hi'), 'notepad');
+});
+
+test('a quick failure is "not found" by the shell’s exit code (and on Windows by looking the program up)', async () => {
+  assert.equal(await commandNotFound('nope', 127, 'linux'), true);
+  assert.equal(await commandNotFound('ls', 2, 'linux'), false);
+  assert.equal(await commandNotFound('nope', 9009, 'win32'), true);
+  if (win) {
+    assert.equal(await commandNotFound('definitely-not-a-program-xyz', 1, 'win32'), true);
+    assert.equal(await commandNotFound('cmd /c exit 1', 1, 'win32'), false, 'it exists; it just failed');
+    assert.equal(await commandNotFound('start "" nothing', 1, 'win32'), false, 'cmd.exe’s own commands count as found');
+  }
 });
 
 test('Run Command labels name the program, also for Windows paths', () => {
