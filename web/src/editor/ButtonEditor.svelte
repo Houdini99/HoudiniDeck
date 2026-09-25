@@ -101,6 +101,9 @@
     const meta = actionMeta(type);
     draft.tap = meta.create();
     if (!existing && meta.confirmByDefault) draft.confirm = true;
+    // An automatic reset from the previous choice (still untouched) goes with it.
+    const longPress = draft.longPress && $state.snapshot(draft.longPress);
+    if (longPress && JSON.stringify(longPress) === JSON.stringify(RESET_ON_LONG_PRESS[longPress.type]?.())) draft.longPress = undefined;
     const reset = RESET_ON_LONG_PRESS[type];
     if (reset && !draft.longPress) {
       draft.longPress = reset();
