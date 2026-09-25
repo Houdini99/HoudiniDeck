@@ -17,6 +17,7 @@
   class:program={visual.ring === 'program'}
   class:preview={visual.ring === 'preview'}
   class:busy={visual.busy}
+  class:alert={visual.alert}
   class:dim={visual.offline || visual.disabled}
   class:bleed
   class:has-badge={!!visual.badge}
@@ -26,7 +27,7 @@
   <!-- Sizes below use cqi, which resolve against .face (a size container) only inside it. -->
   <div class="inner">
     {#if visual.gauge}
-      <div class="gauge" class:with-label={labelShown}>
+      <div class="gauge" class:with-label={labelShown} style:--chars={Math.max(4, visual.gauge.text.length)}>
         <span class="gauge-value">{visual.gauge.text}</span>
         {#if visual.gauge.detail}<span class="gauge-detail">{visual.gauge.detail}</span>{/if}
         {#if visual.gauge.level !== undefined}
@@ -122,13 +123,15 @@
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
+  /* Longer readings (a clock with seconds, a big count) get smaller so they fit. */
   .gauge-value {
-    font-size: clamp(14px, 30cqi, 56px);
+    font-size: clamp(12px, min(30cqi, calc(150cqi / var(--chars))), 56px);
     font-weight: 700;
     letter-spacing: -0.02em;
+    white-space: nowrap;
   }
   .gauge.with-label .gauge-value {
-    font-size: clamp(12px, 25cqi, 48px);
+    font-size: clamp(11px, min(25cqi, calc(140cqi / var(--chars))), 48px);
   }
   .gauge-detail {
     margin-top: 3cqi;
@@ -199,6 +202,23 @@
   }
   .busy {
     animation: pulse 1s ease-in-out infinite;
+  }
+  /* A countdown that ran out: a red ring, and the button flashes until someone taps it. */
+  .alert {
+    animation: alert 0.8s ease-in-out infinite alternate;
+  }
+  .alert::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 max(3px, 4.5cqi) #e5484d;
+    pointer-events: none;
+  }
+  @keyframes alert {
+    to {
+      background: color-mix(in srgb, var(--bg) 45%, #e5484d);
+    }
   }
   .dim {
     opacity: 0.42;

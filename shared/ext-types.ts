@@ -54,15 +54,39 @@ export interface StatsState {
   gpu?: { util: number; temp: number; memUsed: number; memTotal: number } | null;
 }
 
+/** A Timer button's clock. It runs while `startedAt` is set; `elapsedMs` is what it counted before that. */
+export interface TimerState {
+  /** Server time (ms) when it last started. */
+  startedAt?: number;
+  elapsedMs: number;
+}
+
 export interface ExtState {
   media: MediaState;
   audio: AudioState;
   stats: StatsState;
+  /** Counter buttons' counts, by button id. */
+  counters: Record<string, number>;
+  /** Toggle buttons that are "on" (their first action ran last), by button id. */
+  toggles: Record<string, boolean>;
+  /** Timer buttons' clocks, by button id. */
+  timers: Record<string, TimerState>;
+  /** Sounds playing, as "<button id>/<sound file>". */
+  sounds: string[];
 }
 
 export function emptyExtState(): ExtState {
-  return { media: { available: true, players: {} }, audio: { available: true }, stats: {} };
+  return { media: { available: true, players: {} }, audio: { available: true }, stats: {}, counters: {}, toggles: {}, timers: {}, sounds: [] };
 }
+
+/** Time a timer has counted by `now` (server clock). */
+export function timerElapsed(timer: TimerState | undefined, now: number): number {
+  if (!timer) return 0;
+  return timer.elapsedMs + (timer.startedAt === undefined ? 0 : Math.max(0, now - timer.startedAt));
+}
+
+/** The key a playing sound has in ExtState.sounds. */
+export const soundKey = (buttonId: string, sound: string): string => `${buttonId}/${sound}`;
 
 /** The player a media button refers to (its `player` field, or '' for whichever is active). */
 export function followedPlayer(ext: ExtState, player: string | undefined): PlayerInfo | null | undefined {

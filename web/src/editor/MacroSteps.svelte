@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CATEGORIES, actionBehavior, actionMeta, availableActionTypes } from '$shared/actions-meta.ts';
+  import { CATEGORIES, actionMeta, availableActionTypes, isStepType } from '$shared/actions-meta.ts';
   import { MAX_MACRO_STEPS, type ActionType, type MacroStep, type StepAction } from '$shared/schema.ts';
   import { store } from '../lib/store.svelte.ts';
   import UiIcon from '../lib/UiIcon.svelte';
@@ -8,12 +8,8 @@
   // A macro's steps in order: actions, each with its own form, and pauses.
   let { steps = $bindable() }: { steps: MacroStep[] } = $props();
 
-  // No macros inside macros, no page navigation, and nothing that needs holding or dragging.
-  const stepTypes = $derived(
-    availableActionTypes(store.info?.commands ?? false, store.info?.platform).filter(
-      (t) => t !== 'macro' && !t.startsWith('deck.') && actionBehavior(actionMeta(t).create()) === 'press',
-    ),
-  );
+  // No macros or toggles inside macros, no page navigation, and nothing that needs holding or dragging.
+  const stepTypes = $derived(availableActionTypes(store.info?.commands ?? false, store.info?.platform).filter(isStepType));
   /** The choices by category; `current` stays listed even if this server can't run it. */
   const groupsFor = (current?: ActionType) =>
     CATEGORIES.map((category) => ({

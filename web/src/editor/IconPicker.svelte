@@ -21,8 +21,8 @@
   import type { IconRef } from '$shared/schema.ts';
   import { prepareImage } from '../lib/device.ts';
   import Icon from '../lib/Icon.svelte';
-  import { getKey } from '../lib/key.ts';
   import UiIcon from '../lib/UiIcon.svelte';
+  import { uploadFile } from '../lib/upload.ts';
 
   let { current, onpick, onclose }: { current?: IconRef; onpick: (icon: IconRef | undefined) => void; onclose: () => void } =
     $props();
@@ -73,13 +73,9 @@
     uploading = true;
     uploadError = '';
     try {
-      const form = new FormData();
-      form.append('file', await prepareImage(file), file.name);
-      const key = getKey();
-      const res = await fetch('/api/uploads', { method: 'POST', body: form, headers: key ? { Authorization: `Bearer ${key}` } : {} });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `Upload failed (HTTP ${res.status})`);
-      onpick({ upload: body.file });
+      const uploaded = await uploadFile(await prepareImage(file), file.name);
+      if (!/\.(png|jpg|webp|gif|svg)$/.test(uploaded)) throw new Error('That is not an image');
+      onpick({ upload: uploaded });
     } catch (err) {
       uploadError = (err as Error).message;
     } finally {

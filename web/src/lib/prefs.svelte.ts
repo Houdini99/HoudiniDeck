@@ -8,10 +8,12 @@ export interface Prefs {
   showLabels: boolean;
   haptics: boolean;
   keepAwake: boolean;
+  /** Darken the screen after this many idle minutes (0: never); the next tap only wakes it. */
+  dimAfterMin: number;
 }
 
 const STORAGE_KEY = 'vsd.prefs';
-const DEFAULTS: Prefs = { startPage: '', lastPage: '', compact: false, showLabels: true, haptics: true, keepAwake: true };
+const DEFAULTS: Prefs = { startPage: '', lastPage: '', compact: false, showLabels: true, haptics: true, keepAwake: true, dimAfterMin: 0 };
 
 function load(): Prefs {
   try {

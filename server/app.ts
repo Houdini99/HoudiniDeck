@@ -7,7 +7,10 @@ import type { FastifyInstance } from 'fastify';
 import { deckActions } from '../shared/deck-utils.ts';
 import type { Deck } from '../shared/schema.ts';
 import { Dispatcher } from './actions/dispatch.ts';
+import { obsTextSetter } from './actions/obs.ts';
 import { createExecutors } from './actions/registry.ts';
+import { TimerTexts } from './actions/timer.ts';
+import { ButtonStates } from './button-state.ts';
 import { packageVersion, picturesDir, type Env } from './env.ts';
 import { ExtStore } from './ext-store.ts';
 import { createHttpServer } from './http.ts';
@@ -21,6 +24,7 @@ import { AudioWatcher } from './system/audio.ts';
 import { listKdeShortcuts } from './system/kde.ts';
 import { MediaWatcher, type MediaSource } from './system/media.ts';
 import { runProcess, spawnLines } from './system/process.ts';
+import { SoundPlayer, programSoundBackend, windowsSoundBackend } from './system/sound.ts';
 import { StatsWatcher } from './system/stats.ts';
 import { WinHelper } from './system/windows/helper.ts';
 import { WindowsMediaWatcher } from './system/windows/media.ts';
@@ -33,6 +37,8 @@ export interface App {
   media: MediaSource;
   audio: AudioWatcher;
   stats: StatsWatcher;
+  states: ButtonStates;
+  sounds: SoundPlayer;
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   /** Port actually bound (useful when env.port is 0). */
@@ -69,11 +75,26 @@ export async function startApp(env: Env): Promise<App> {
     deckStore.on('change', (deck) => watcher.setDeck(deck));
   }
   if (winHelper) {
-    // Starting PowerShell takes a few seconds; Keyboard Shortcut buttons shouldn't wait for that on their first press.
-    const warmUp = (deck: Deck) => deckActions(deck).some((a) => a.type === 'system.hotkey') && winHelper.start();
+    // Starting PowerShell takes a few seconds; Keyboard Shortcut and Play Sound buttons shouldn't wait for that on their first press.
+    const warmUp = (deck: Deck) => deckActions(deck).some((a) => a.type === 'system.hotkey' || a.type === 'sound.play') && winHelper.start();
     warmUp(deckStore.deck);
     deckStore.on('change', warmUp);
   }
+  const states = await ButtonStates.load(env.dataDir, ext, deckStore.deck, createLogger('buttons'));
+  const sounds = new SoundPlayer({
+    store: ext,
+    backend: winHelper ? windowsSoundBackend(winHelper) : programSoundBackend(),
+    dir: join(env.dataDir, 'uploads'),
+    log: createLogger('sound'),
+  });
+  const timerTexts = new TimerTexts({ getDeck: () => deckStore.deck, states, setText: obsTextSetter(bridge), log: createLogger('timers') });
+  deckStore.on('change', () => timerTexts.update());
+  // After OBS (re)connects, timers write their text sources again.
+  let obsConnected = false;
+  bridge.store.on('change', () => {
+    if (bridge.connected && !obsConnected) timerTexts.resync();
+    obsConnected = bridge.connected;
+  });
   const actionLog = createLogger('actions');
   const dispatcher = new Dispatcher({
     executors: createExecutors({
@@ -85,6 +106,10 @@ export async function startApp(env: Env): Promise<App> {
       audio,
       commandsEnabled: env.commandsEnabled,
       windows: winHelper && winMedia && { helper: winHelper, media: winMedia },
+      states,
+      getDeck: () => deckStore.deck,
+      timerTexts,
+      sounds,
     }),
     getDeck: () => deckStore.deck,
     log: actionLog,
@@ -125,6 +150,8 @@ export async function startApp(env: Env): Promise<App> {
     media,
     audio,
     stats,
+    states,
+    sounds,
     deckStore,
     settingsStore,
     port,
@@ -133,7 +160,10 @@ export async function startApp(env: Env): Promise<App> {
       media.stop();
       audio.stop();
       stats.stop();
+      timerTexts.stop();
+      sounds.stopAll();
       winHelper?.stop();
+      await states.flush();
       await bridge.stop();
       await http.close();
     },

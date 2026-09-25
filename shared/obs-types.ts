@@ -104,3 +104,10 @@ export function emptyObsState(connection: ObsConnection = 'disconnected'): ObsSt
 
 /** Media inputs that respond to TriggerMediaInputAction. */
 export const MEDIA_INPUT_KINDS = ['ffmpeg_source', 'vlc_source'];
+
+/** OBS's text sources: Text (GDI+) on Windows, Text (FreeType 2) on Linux, in all their versions. */
+export function isTextInputKind(kind: string): boolean {
+  return /^text_(gdiplus|ft2_source)/.test(kind);
+}
+
+export const BROWSER_INPUT_KIND = 'browser_source';

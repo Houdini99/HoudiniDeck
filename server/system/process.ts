@@ -59,3 +59,29 @@ export const spawnLines: Spawner = (cmd, args, on) => {
     },
   };
 };
+
+/** How long a started program is watched for an immediate failure. */
+const LAUNCH_CHECK_MS = 1000;
+
+/**
+ * Start a program without waiting for it (it may keep running, like a browser). Resolves with its exit
+ * code if it ends within a second, else with null. Rejects if it can't start (ENOENT: not installed).
+ */
+export type Launcher = (cmd: string, args: string[]) => Promise<number | null>;
+
+export const launchProgram: Launcher = (cmd, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    const timer = setTimeout(() => {
+      child.unref();
+      resolve(null);
+    }, LAUNCH_CHECK_MS);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code ?? 1);
+    });
+  });

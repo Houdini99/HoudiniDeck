@@ -2,7 +2,7 @@
 import { emptyExtState, type ExtState, type StatMetric } from '$shared/ext-types.ts';
 import type { VisualCtx } from '$shared/feedback.ts';
 import type { ObsState } from '$shared/obs-types.ts';
-import type { ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
+import type { HistoryInfo, ServerInfo, ServerMsg, ToastLevel } from '$shared/protocol.ts';
 import type { Deck, DeckOp, Page } from '$shared/schema.ts';
 import { clearKey, getKey, setKey } from './key.ts';
 import { prefs } from './prefs.svelte.ts';
@@ -57,6 +57,8 @@ class Store {
   /** Set while this device has to be paired before it can connect. */
   pairing = $state<PairingReason | null>(null);
   deck = $state.raw<Deck | null>(null);
+  /** What Undo/Redo would take back or bring back. */
+  history = $state.raw<HistoryInfo>({});
   obs = $state.raw<ObsState | null>(null);
   /** Media players and other state from outside OBS. */
   ext = $state.raw<ExtState>(emptyExtState());
@@ -91,18 +93,25 @@ class Store {
   private buildId: string | null = null;
   private readonly meterInterest = new Interest<string>((inputs) => this.socket.send({ t: 'meters', inputs }));
   private readonly statInterest = new Interest<StatMetric>((metrics) => this.socket.send({ t: 'stats', metrics }));
-  private tick?: ReturnType<typeof setInterval>;
+  private tick?: ReturnType<typeof setTimeout>;
 
   start(): void {
     this.socket.onMessage = (msg) => this.handle(msg);
     this.socket.onStatus = (status) => (this.conn = status);
     this.socket.onNeedsKey = () => (this.pairing = 'needed');
     this.socket.connect();
-    this.tick = setInterval(() => (this.now = Date.now() + this.clockOffset), 1000);
+    this.ticking();
+  }
+
+  /** Ticks just after each full second of the server's clock, so clocks and timers change in step. */
+  private ticking(): void {
+    const now = Date.now() + this.clockOffset;
+    this.now = now;
+    this.tick = setTimeout(() => this.ticking(), 1000 - (now % 1000) + 5);
   }
 
   stop(): void {
-    clearInterval(this.tick);
+    clearTimeout(this.tick);
     this.socket.close();
   }
 
@@ -117,6 +126,7 @@ class Store {
         this.buildId = msg.buildId;
         this.syncClock(msg.serverTime);
         this.deck = msg.deck;
+        this.history = msg.history;
         this.obs = msg.obs;
         this.ext = msg.ext;
         this.info = msg.info;
@@ -127,6 +137,7 @@ class Store {
         break;
       case 'deck':
         this.deck = msg.deck;
+        this.history = msg.history;
         break;
       case 'obs':
         this.syncClock(msg.serverTime);
@@ -216,6 +227,26 @@ class Store {
   back(): void {
     const target = this.backStack.pop() ?? this.deck?.homePageId;
     if (target) this.show(target);
+  }
+
+  /** The next or previous page in tab order, wrapping around (Back returns from there). */
+  stepPage(direction: 'next' | 'previous'): void {
+    const pages = this.deck?.pages ?? [];
+    const index = pages.findIndex((p) => p.id === this.currentPage?.id);
+    if (pages.length < 2 || index < 0) return;
+    this.goTo(pages[(index + (direction === 'next' ? 1 : -1) + pages.length) % pages.length].id);
+  }
+
+  /** Undo or redo the last deck edit (anyone's). */
+  async undo(redo = false): Promise<void> {
+    const label = redo ? this.history.redo : this.history.undo;
+    if (!label) return;
+    try {
+      await this.op({ op: redo ? 'deck.redo' : 'deck.undo' });
+      this.toast(`${redo ? 'Redone' : 'Undone'}: ${label}`);
+    } catch {
+      // shown as a toast
+    }
   }
 
   private show(pageId: string): void {

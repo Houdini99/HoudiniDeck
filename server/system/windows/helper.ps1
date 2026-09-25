@@ -1,5 +1,6 @@
 # The deck's helper on Windows: the default speakers and microphone (Core Audio), key presses
-# (SendInput) and media players (the media sessions Windows shows next to its volume slider).
+# (SendInput), media players (the media sessions Windows shows next to its volume slider) and
+# sound clips for Play Sound buttons (winmm's MCI).
 # The server starts one copy (see helper.ts) and talks to it in JSON lines: requests on stdin,
 # answers and media updates on stdout.
 #
@@ -186,6 +187,67 @@ namespace HoudiniDeck
         }
     }
 
+    // Sound clips (MP3, WAV) through MCI, each opened under its own alias so several can play at once.
+    public static class Sound
+    {
+        [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+        static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr callback);
+
+        [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+        static extern bool mciGetErrorString(int error, StringBuilder text, int length);
+
+        static string Send(string command)
+        {
+            StringBuilder result = new StringBuilder(256);
+            int error = mciSendString(command, result, result.Capacity, IntPtr.Zero);
+            if (error != 0)
+            {
+                StringBuilder text = new StringBuilder(256);
+                if (!mciGetErrorString(error, text, text.Capacity)) text.Append("MCI error " + error);
+                throw new InvalidOperationException(text.ToString());
+            }
+            return result.ToString();
+        }
+
+        // Opens the file and starts it; returns its length in ms (0 when MCI can't tell). volume: 0..1000.
+        public static int Play(string alias, string path, int volume)
+        {
+            Send("open \"" + path + "\" type mpegvideo alias " + alias);
+            try
+            {
+                Send("set " + alias + " time format milliseconds");
+                Send("setaudio " + alias + " volume to " + Math.Max(0, Math.Min(1000, volume)));
+                int length;
+                if (!int.TryParse(Send("status " + alias + " length"), out length)) length = 0;
+                Send("play " + alias);
+                return length;
+            }
+            catch
+            {
+                Close(alias);
+                throw;
+            }
+        }
+
+        public static bool Playing(string alias)
+        {
+            try
+            {
+                return Send("status " + alias + " mode") == "playing";
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        // Stops the sound and frees it; nothing happens if it is closed already.
+        public static void Close(string alias)
+        {
+            mciSendString("close " + alias, null, 0, IntPtr.Zero);
+        }
+    }
+
     public static class Text
     {
         // JSON with everything outside printable ASCII escaped, so no code page can garble it on the way.
@@ -363,6 +425,20 @@ function Invoke-Request($request) {
     }
     'keys' {
       [HoudiniDeck.Keys]::Send([int[]]@($request.events), 10, 50)
+      return $null
+    }
+    'sound.play' {
+      # The alias and path become part of an MCI command string, so only safe ones get this far.
+      $alias = [string]$request.alias
+      $path = [string]$request.path
+      if ($alias -notmatch '^[A-Za-z0-9]{1,32}$') { throw "Bad sound name: $alias" }
+      if ($path.Contains('"') -or -not [IO.File]::Exists($path)) { throw "Sound file not found: $path" }
+      return @{ lengthMs = [HoudiniDeck.Sound]::Play($alias, $path, [int]$request.volume) }
+    }
+    'sound.playing' { return [HoudiniDeck.Sound]::Playing([string]$request.alias) }
+    'sound.close' {
+      $alias = [string]$request.alias
+      if ($alias -match '^[A-Za-z0-9]{1,32}$') { [HoudiniDeck.Sound]::Close($alias) }
       return $null
     }
     'media.state' { return Get-MediaState $false }

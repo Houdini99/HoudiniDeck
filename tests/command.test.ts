@@ -80,7 +80,7 @@ test('the editor only offers Run Command when the server allows it; such buttons
     buttonVisual({ id: 'x', tap: cmd('true') }, { obs: emptyObsState(), deck: deck(), ext: emptyExtState(), now: 0, commands });
   assert.equal(look(false).disabled, true);
   assert.equal(look(undefined).disabled, true);
-  assert.equal(look(true).disabled, false);
+  assert.ok(!look(true).disabled);
   assert.equal(look(true).label, 'true');
 });
 

@@ -42,6 +42,7 @@
     if (!action || actionBehavior(action) === 'display') return;
     if (action.type === 'deck.page') store.goTo(action.pageId);
     else if (action.type === 'deck.back') store.back();
+    else if (action.type === 'deck.pageStep') store.stepPage(action.direction);
     else store.press(page.id, button.id, which);
   }
 

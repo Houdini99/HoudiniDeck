@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { OBSWebSocket } from 'obs-websocket-js/json';
 import { mulToDb, posToMul } from '../../shared/fader.ts';
 import { resolveInput, resolveScene, resolveSceneItem, resolveSourceName } from '../../shared/obs-resolve.ts';
-import type { ObsInput, ObsState } from '../../shared/obs-types.ts';
+import { BROWSER_INPUT_KIND, isTextInputKind, type ObsInput, type ObsState } from '../../shared/obs-types.ts';
 import type { ObsRef } from '../../shared/schema.ts';
 import { ActionError, type ActionOfPrefix, type Phase } from '../actions/executor.ts';
 
@@ -33,6 +33,13 @@ function audioInput(state: ObsState, ref: ObsRef): ObsInput {
   const input = resolveInput(state, ref) ?? fail(`Audio input “${ref.name}” not found in OBS`);
   if (!input.audio) fail(`“${input.name}” has no audio`);
   return input;
+}
+
+/** Replace what a text source shows. */
+export async function setTextSource(obs: Caller, state: ObsState, ref: ObsRef, text: string): Promise<void> {
+  const input = resolveInput(state, ref) ?? fail(`Text source “${ref.name}” not found in OBS`);
+  if (!isTextInputKind(input.kind)) fail(`“${input.name}” is not a text source`);
+  await obs.call('SetInputSettings', { inputName: input.name, inputSettings: { text }, overlay: true });
 }
 
 /** A source name as part of a file name: without the characters Windows (or Linux) forbids there. */
@@ -164,6 +171,16 @@ export async function executeObsAction(
       await mkdir(opts.screenshotDir, { recursive: true });
       const file = join(opts.screenshotDir, `${safeFileName(source)} ${timestamp()}.png`);
       await obs.call('SaveSourceScreenshot', { sourceName: source, imageFormat: 'png', imageFilePath: file });
+      return;
+    }
+    case 'obs.text':
+      await setTextSource(obs, state, action.input, action.text ?? '');
+      return;
+    case 'obs.browserRefresh': {
+      const input = resolveInput(state, action.input) ?? fail(`Browser source “${action.input.name}” not found in OBS`);
+      if (input.kind !== BROWSER_INPUT_KIND) fail(`“${input.name}” is not a browser source`);
+      // The "Refresh cache of current page" button in the source's properties.
+      await obs.call('PressInputPropertiesButton', { inputName: input.name, propertyName: 'refreshnocache' });
       return;
     }
     case 'obs.collection':

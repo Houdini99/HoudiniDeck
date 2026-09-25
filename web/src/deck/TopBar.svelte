@@ -58,6 +58,24 @@
 
   <div class="actions">
     {#if store.editMode}
+      <button
+        class="icon-btn"
+        title={store.history.undo ? `Undo ${store.history.undo} (Ctrl+Z)` : 'Nothing to undo'}
+        aria-label="Undo"
+        disabled={!store.history.undo}
+        onclick={() => store.undo()}
+      >
+        <UiIcon name="undo" />
+      </button>
+      <button
+        class="icon-btn"
+        title={store.history.redo ? `Redo ${store.history.redo} (Ctrl+Shift+Z)` : 'Nothing to redo'}
+        aria-label="Redo"
+        disabled={!store.history.redo}
+        onclick={() => store.undo(true)}
+      >
+        <UiIcon name="redo" />
+      </button>
       <button class="btn primary" onclick={() => (store.editMode = false)}>Done</button>
     {:else}
       <button class="icon-btn" title="Edit layout" aria-label="Edit layout" onclick={() => (store.editMode = true)}>
@@ -192,6 +210,10 @@
     align-items: center;
     gap: 2px;
     flex: none;
+  }
+  .actions .icon-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
   @media (max-width: 900px) {
     .stats {

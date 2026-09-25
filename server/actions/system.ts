@@ -1,11 +1,13 @@
 // The system.* family: the PC itself. The default speakers and microphone (via wpctl), key presses
-// (via ydotool), and shell commands (only when the server was started with STREAMDECK_ENABLE_COMMANDS=1).
+// (via ydotool), web pages in its browser, and shell commands (only when the server was started with
+// STREAMDECK_ENABLE_COMMANDS=1).
 // On Windows, the helper does the speakers, microphone and keys (see ../system/windows/).
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
 import { ydotoolKeyArgs } from '../../shared/keys.ts';
 import { DEFAULT_COMMAND_TIMEOUT_MS, commandNotFound, commandProgram, launchCommand, outputTail, runCommand } from '../system/command.ts';
-import type { RunResult, Runner } from '../system/process.ts';
+import { openUrl } from '../system/open-url.ts';
+import type { Launcher, RunResult, Runner } from '../system/process.ts';
 import type { WinRequester } from '../system/windows/helper.ts';
 import { pressWindowsKeys } from '../system/windows/keys.ts';
 import { setWindowsVolume } from '../system/windows/volume.ts';
@@ -19,6 +21,8 @@ export interface SystemDeps {
   commandsEnabled: boolean;
   /** On Windows: the helper, which sets the volume and presses keys instead of wpctl and ydotool. */
   windows?: WinRequester;
+  /** Starts the browser for Open Website (tests pass a fake). */
+  launch?: Launcher;
 }
 
 export function systemExecutor(deps: SystemDeps): Executor<'system'> {
@@ -32,6 +36,8 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
         return; // a display: tapping it does nothing
       case 'system.hotkey':
         return deps.windows ? pressWindowsKeys(deps.windows, action, phase) : pressKeys(action, phase, deps.run);
+      case 'system.openUrl':
+        return openUrl(action.url, deps.launch);
       default:
         throw new Error(`No executor for ${(action satisfies never as { type: string }).type}`);
     }

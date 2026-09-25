@@ -33,6 +33,12 @@ export interface SettingsView {
 
 export type ToastLevel = 'info' | 'error';
 
+/** What Undo and Redo would do next (e.g. "deleted button"); unset when there is nothing to undo or redo. */
+export interface HistoryInfo {
+  undo?: string;
+  redo?: string;
+}
+
 /** KDE global shortcuts by app, for the KDE Shortcut editor (query 'kdeShortcuts'). */
 export interface KdeShortcut {
   id: string;
@@ -48,8 +54,8 @@ export interface KdeComponent {
 export type ServerMsg =
   | { t: 'hello'; protocol: number; needsAuth: boolean }
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }
-  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; obs: ObsState; ext: ExtState; info: ServerInfo }
-  | { t: 'deck'; deck: Deck }
+  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; history: HistoryInfo; obs: ObsState; ext: ExtState; info: ServerInfo }
+  | { t: 'deck'; deck: Deck; history: HistoryInfo }
   | { t: 'obs'; obs: ObsState; serverTime: number }
   | { t: 'ext'; ext: ExtState }
   | { t: 'meters'; levels: Record<string, number> }

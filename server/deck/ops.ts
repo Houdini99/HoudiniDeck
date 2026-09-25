@@ -2,7 +2,9 @@
 import { z } from 'zod';
 import { LIMITS, firstEmptySlot, slotInBounds, slotKey } from '../../shared/deck-utils.ts';
 import type { ObsState } from '../../shared/obs-types.ts';
-import { DeckSchema, type Action, type Deck, type DeckOp, type Page } from '../../shared/schema.ts';
+import { withNested } from '../../shared/deck-utils.ts';
+import { DeckSchema, type Deck, type DeckOp, type Page } from '../../shared/schema.ts';
+import type { DeckHistory } from './history.ts';
 import { buildStarterPage } from './starter.ts';
 
 export class OpError extends Error {}
@@ -12,6 +14,8 @@ export interface OpContext {
   newId: () => string;
   /** Whether Run Command buttons may be added or changed (STREAMDECK_ENABLE_COMMANDS=1). */
   commandsEnabled?: boolean;
+  /** For deck.undo and deck.redo. */
+  history?: Pick<DeckHistory, 'nextUndo' | 'nextRedo'>;
 }
 
 export interface OpResult {
@@ -19,6 +23,8 @@ export interface OpResult {
   data?: Record<string, unknown>;
   /** Set when the previous deck should be backed up first (e.g. before an import). */
   backup?: string;
+  /** Set for deck.undo and deck.redo: once saved, the history has to move along. */
+  history?: 'undo' | 'redo';
 }
 
 function mustPage(deck: Deck, pageId: string): Page {
@@ -45,17 +51,15 @@ function checkPageLimit(deck: Deck): void {
   if (deck.pages.length >= LIMITS.maxPages) throw new OpError(`A deck can have at most ${LIMITS.maxPages} pages`);
 }
 
-/** Every Run Command action in the deck (macro steps too), as JSON. */
+/** Every Run Command action in the deck (macro steps and toggle sides too), as JSON. */
 function commandActions(deck: Deck): string[] {
   const found: string[] = [];
-  const visit = (action: Action | undefined): void => {
-    if (action?.type === 'system.command') found.push(JSON.stringify(action));
-    if (action?.type === 'macro') for (const step of action.steps) if ('action' in step) visit(step.action);
-  };
   for (const page of deck.pages) {
     for (const button of Object.values(page.buttons)) {
-      visit(button.tap);
-      visit(button.longPress);
+      for (const action of [button.tap, button.longPress]) {
+        if (!action) continue;
+        for (const inner of withNested(action)) if (inner.type === 'system.command') found.push(JSON.stringify(inner));
+      }
     }
   }
   return found;
@@ -151,10 +155,11 @@ function change(current: Deck, op: DeckOp, ctx: OpContext): OpResult {
       const page = mustPage(deck, op.pageId);
       const button = page.buttons[op.slot];
       if (!button) throw new OpError('There is no button to duplicate');
-      const slot = firstEmptySlot(page);
-      if (!slot) throw new OpError('This page is full');
-      page.buttons[slot] = { ...structuredClone(button), id: ctx.newId() };
-      return { deck, data: { slot } };
+      const target = op.toPageId ? mustPage(deck, op.toPageId) : page;
+      const slot = firstEmptySlot(target);
+      if (!slot) throw new OpError(target === page ? 'This page is full' : `“${target.name}” is full`);
+      target.buttons[slot] = { ...structuredClone(button), id: ctx.newId() };
+      return { deck, data: { slot, pageId: target.id } };
     }
     case 'folder.create': {
       checkPageLimit(deck);
@@ -194,5 +199,17 @@ function change(current: Deck, op: DeckOp, ctx: OpContext): OpResult {
       deck.pages.push(page);
       return { deck, data: { pageId: page.id } };
     }
+    case 'deck.undo': {
+      const previous = ctx.history?.nextUndo() ?? fail('There is nothing to undo');
+      return { deck: structuredClone(previous), history: 'undo' };
+    }
+    case 'deck.redo': {
+      const next = ctx.history?.nextRedo() ?? fail('There is nothing to redo');
+      return { deck: structuredClone(next), history: 'redo' };
+    }
   }
+}
+
+function fail(message: string): never {
+  throw new OpError(message);
 }

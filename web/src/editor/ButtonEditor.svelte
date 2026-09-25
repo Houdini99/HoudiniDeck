@@ -35,7 +35,17 @@
     'obs.collection',
     'obs.profile',
     'media.player',
+    'sound.play',
+    'sound.stop',
+    'toggle',
+    'timer',
   ]);
+
+  // New Counter and Timer buttons reset on a long press, like on a Stream Deck.
+  const RESET_ON_LONG_PRESS: Partial<Record<ActionType, () => Action>> = {
+    counter: () => ({ type: 'counter', mode: 'set' }),
+    timer: () => ({ type: 'timer', mode: 'reset' }),
+  };
 
   // The editor is keyed on the slot it edits (see App.svelte), so this is fixed for its lifetime.
   const target = store.editing!;
@@ -87,6 +97,11 @@
     const meta = actionMeta(type);
     draft.tap = meta.create();
     if (!existing && meta.confirmByDefault) draft.confirm = true;
+    const reset = RESET_ON_LONG_PRESS[type];
+    if (reset && !draft.longPress) {
+      draft.longPress = reset();
+      showLongPress = true;
+    }
     previewActive = false;
     picking = false;
   }
@@ -147,6 +162,18 @@
       store.toast('Button duplicated');
       close();
     }, () => {});
+  }
+
+  const otherPages = $derived((store.deck?.pages ?? []).filter((p) => p.id !== target.pageId));
+
+  async function copyTo(select: HTMLSelectElement): Promise<void> {
+    const toPageId = select.value;
+    select.value = '';
+    const name = otherPages.find((p) => p.id === toPageId)?.name;
+    await store.op({ op: 'button.duplicate', pageId: target.pageId, slot: target.slot, toPageId }).then(
+      () => store.toast(`Copied to “${name}”`),
+      () => {},
+    );
   }
 
   async function createFolder(e: SubmitEvent): Promise<void> {
@@ -327,6 +354,17 @@
           </span>
           <input type="checkbox" bind:checked={draft.confirm} />
         </label>
+
+        {#if existing && otherPages.length}
+          <label class="field">
+            <span>Copy this button to another page</span>
+            <select value="" onchange={(e) => copyTo(e.currentTarget)}>
+              <option value="" disabled>Choose a page…</option>
+              {#each otherPages as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+            </select>
+            <small class="hint">Copies the button as it was last saved.</small>
+          </label>
+        {/if}
 
         {#if error}<p class="error">{error}</p>{/if}
       {/if}

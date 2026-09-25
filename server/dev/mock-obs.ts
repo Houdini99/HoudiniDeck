@@ -64,6 +64,9 @@ interface MockInput {
   muted: boolean;
   volumeMul: number;
   mediaState?: string;
+  settings: Record<string, unknown>;
+  /** How often a browser source's "refresh cache" button was pressed. */
+  refreshes?: number;
 }
 interface MockOutput {
   active: boolean;
@@ -110,6 +113,7 @@ export function createMockState(): MockState {
     caps,
     muted: false,
     volumeMul: 1,
+    settings: kind.startsWith('text_') ? { text: name } : kind === 'browser_source' ? { url: 'https://example.com/' } : {},
     ...extra,
   });
   return {
@@ -335,6 +339,23 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
     GetInputList: () => ({
       inputs: state.inputs.map((i) => ({ inputName: i.name, inputUuid: i.uuid, inputKind: i.kind, unversionedInputKind: i.kind, inputKindCaps: i.caps })),
     }),
+    GetInputSettings: (d) => {
+      const input = findInput(d.inputName);
+      return { inputSettings: input.settings, inputKind: input.kind };
+    },
+    SetInputSettings: (d) => {
+      const input = findInput(d.inputName);
+      if (!d.inputSettings || typeof d.inputSettings !== 'object') throw new RequestError(Status.MissingRequestField, 'Your request is missing the `inputSettings` field.');
+      input.settings = d.overlay === false ? { ...d.inputSettings } : { ...input.settings, ...d.inputSettings };
+      emit('InputSettingsChanged', { inputName: input.name, inputUuid: input.uuid, inputSettings: input.settings }, Intent.Inputs);
+    },
+    PressInputPropertiesButton: (d) => {
+      const input = findInput(d.inputName);
+      if (input.kind !== 'browser_source' || !['refreshnocache', 'refresh'].includes(d.propertyName)) {
+        throw new RequestError(Status.ResourceNotFound, 'Unable to find a property by that name.');
+      }
+      input.refreshes = (input.refreshes ?? 0) + 1;
+    },
     GetInputMute: (d) => ({ inputMuted: audioInput(d.inputName).muted }),
     SetInputMute: (d) => setMute(audioInput(d.inputName), !!d.inputMuted),
     ToggleInputMute: (d) => {

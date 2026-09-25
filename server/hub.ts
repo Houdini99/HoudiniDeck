@@ -10,6 +10,7 @@ import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
 import { ActionError } from './actions/executor.ts';
 import { isTrustedLocal, keyMatches, originAllowed } from './auth.ts';
+import { DeckHistory, opLabel } from './deck/history.ts';
 import { OpError, applyOp } from './deck/ops.ts';
 import type { Env } from './env.ts';
 import type { ExtStore } from './ext-store.ts';
@@ -62,6 +63,7 @@ const isUserError = (err: unknown) => err instanceof ActionError || err instance
 export class Hub {
   private readonly clients = new Map<string, Client>();
   private opQueue: Promise<void> = Promise.resolve();
+  private readonly history = new DeckHistory();
   private obsTimer?: NodeJS.Timeout;
   private extTimer?: NodeJS.Timeout;
   private readonly pingTimer: NodeJS.Timeout;
@@ -134,6 +136,7 @@ export class Hub {
       buildId,
       serverTime: Date.now(),
       deck: deckStore.deck,
+      history: this.history.info,
       obs: bridge.state,
       ext: ext.state,
       info: info(),
@@ -221,11 +224,20 @@ export class Hub {
   private handleOp(client: Client, reqId: number, op: DeckOp): Promise<void> {
     const run = async () => {
       const { deckStore, bridge } = this.deps;
-      const result = applyOp(deckStore.deck, op, { obs: bridge.state, newId, commandsEnabled: this.deps.env.commandsEnabled });
+      const before = deckStore.deck;
+      const result = applyOp(before, op, {
+        obs: bridge.state,
+        newId,
+        commandsEnabled: this.deps.env.commandsEnabled,
+        history: this.history,
+      });
       const valid = DeckSchema.safeParse(result.deck);
       if (!valid.success) throw new OpError(`That change would make the deck invalid:\n${z.prettifyError(valid.error)}`);
-      await deckStore.replace(valid.data, { backupReason: result.backup });
-      this.broadcast({ t: 'deck', deck: deckStore.deck });
+      const saved = await deckStore.replace(valid.data, { backupReason: result.backup });
+      if (result.history === 'undo') this.history.undone(before);
+      else if (result.history === 'redo') this.history.redone(before);
+      else this.history.record(before, saved, opLabel(op));
+      this.broadcast({ t: 'deck', deck: deckStore.deck, history: this.history.info });
       return result.data;
     };
     const next = this.opQueue.then(() => this.reply(client, reqId, run));
