@@ -1,4 +1,4 @@
-# systemd user unit: starts the deck when you log in. See README → "Start it automatically on login".
+# systemd user unit: starts the deck when you log in. See README → "Start automatically on login".
 [Unit]
 Description=Virtual Stream Deck (browser-based Stream Deck for OBS)
 After=graphical-session.target
