@@ -45,6 +45,12 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **Phase 4:** Play Sound with an MP3 and a WAV (winmm), a second press stops it, and that the button goes dark when the sound ends; Type Text with umlauts, an emoji and Enter (e.g. in Notepad and a browser); Open Website; the HTTP API with `curl.exe`.
   - **The installer** (from the Windows installer workflow's artifact or a release): the SmartScreen warning, the options, that the Start menu entry opens the browser (and only the browser when the deck already runs), no firewall question with the firewall option, autostart, an update over a running deck, and uninstalling with and without deleting the data.
 
+- [ ] **Check the Linux AppImage on the real PC** (from a release, or the Linux AppImage workflow's artifact; CI and a local run against the mock OBS passed, see "Linux AppImage" below):
+  - Double-click it in Dolphin: the deck starts and the browser opens; a second double-click only opens the browser; `--stop` stops it.
+  - Against the real OBS, and the Phase 3/4 buttons from inside the AppImage (playerctl, wpctl, ydotool, pw-play, xdg-open and wl-copy come from the system).
+  - The autostart entry from the README (`~/.config/autostart/houdinideck.desktop`), and that Run Command and Open Website work from it.
+  - On one other distribution (e.g. Ubuntu or Fedora in a VM), since it's built for glibc 2.28+.
+
 ## Windows support (2026‑09‑25)
 
 Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program, Windows goes through **one helper**: `server/system/windows/helper.ps1`, a long-running Windows PowerShell 5.1 process that `helper.ts` (`WinHelper`) starts when first needed and again after it stops.
@@ -58,6 +64,22 @@ Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program,
 - **Platform-only actions:** `ACTION_META[type].platforms` (e.g. `['linux']` for `kde.shortcut`). `ServerInfo.platform` tells the browser: the editor doesn't offer such actions, and existing buttons are dimmed. Their executor refuses too.
 - **Installer:** `deploy/windows/installer/` (Inno Setup 6). `build.ps1` stages the server, the built UI, the run-time packages and the `node.exe` that runs the script, then compiles `installer.iss` into `dist-installer/HoudiniDeck-Setup-<version>.exe`. The program goes to Program Files, the data to `%LOCALAPPDATA%\HoudiniDeck` (`HoudiniDeck.cmd` sets `STREAMDECK_DATA_DIR` and runs from there, so `.env` lives there too). Options: a firewall rule for its `node.exe` on private networks, autostart, desktop icon. Updates and the uninstaller stop a running deck first (`stop-deck.ps1`); the uninstaller asks before deleting the data (`/PURGEDATA` skips the question). `.github/workflows/windows-installer.yml` builds it, and `.github/test-installer.ps1` installs, runs, updates and uninstalls it on the Windows runner. It runs only when a GitHub release is published (its `v*` tag must match `package.json`'s version) and then attaches the `.exe` to that release, or when started by hand; pushes and pull requests don't run it, to save Actions minutes. `STREAMDECK_OPEN_BROWSER=1` (the Start menu entry) opens the deck in the browser, or only the browser when a deck already answers on the port.
 - **Tests:** `tests/windows.test.ts` covers the Windows code on any system (fake helper, a stand-in helper process in `tests/fake-win-helper.ts`); `tests/windows-helper.test.ts` runs the real helper and only runs on Windows.
+
+## Linux AppImage (2026‑09‑26)
+
+Every published release also gets `HoudiniDeck-x86_64.AppImage`, so Linux users don't need Node.js, git or a build.
+
+- **Build:** `deploy/linux/appimage/build.sh` (bash) builds `dist-appimage/HoudiniDeck-x86_64.AppImage`.
+  - It stages the same files as the Windows installer (server, shared, built UI, run-time `node_modules`) in `usr/lib/houdinideck/`.
+  - It adds the **official** Node.js 24 for linux-x64 (the newest 24.x from nodejs.org, checked against `SHASUMS256.txt`) as `usr/bin/node`. Never the system's node: distributions such as CachyOS link theirs against their own libraries. The official one needs glibc 2.28+.
+  - `appimagetool` 1.9.1 and the `type2-runtime` 20251108 are pinned by URL and sha256, cached in `dist-appimage/downloads/`. appimagetool is unpacked there once, so it needs no FUSE.
+  - The run-time packages have no native code, so they run anywhere. A release's tag must match `package.json`'s version, as in `build.ps1`.
+- **Launcher:** `deploy/linux/appimage/AppRun` (POSIX sh).
+  - It sets `STREAMDECK_DATA_DIR` to `~/.local/share/HoudiniDeck` (unless it's set), `cd`s there (so `.env` lives there) and runs the bundled node without `LD_LIBRARY_PATH`, so helper programs come from the system.
+  - Without a terminal (double-click, autostart), it logs to `houdinideck.log` in the data folder and sets `STREAMDECK_OPEN_BROWSER=1`. The server then opens the browser, or only opens it when a deck already answers.
+  - `--no-browser` is for autostart. `--stop` sends SIGTERM to `/usr/lib/houdinideck/server/index.ts` (any AppImage's, not a source checkout's) and waits up to 32 s, since the server waits for connected browsers. `--data` opens the data folder.
+- **CI:** `.github/workflows/linux-appimage.yml` runs only for published releases (or by hand). It builds the AppImage, runs `node .github/smoke.mjs --appimage <file>` (with `APPIMAGE_EXTRACT_AND_RUN=1`, since runners may lack FUSE), and attaches it to the release.
+- **Without FUSE,** `--appimage-extract-and-run` unpacks it into `/tmp/appimage_extracted_<md5>` (about 170 MB) and the runtime keeps that for the next start.
 
 ## Phase 3: actions beyond OBS
 

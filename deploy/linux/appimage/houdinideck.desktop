@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=HoudiniDeck
+GenericName=Control panel for OBS
+Comment=A virtual Stream Deck for OBS, in your browser
+Exec=HoudiniDeck
+Icon=houdinideck
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=OBS;stream;streaming;deck;soundboard;

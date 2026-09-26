@@ -1,0 +1,51 @@
+# Builds the Linux AppImage and tries it (runs the deck from it against the mock OBS, then --stop).
+# Like the Windows installer, it runs only when a release is published, and attaches the AppImage to
+# that release. To try changes without a release, start it by hand (Actions → Linux AppImage → Run
+# workflow, or `gh workflow run linux-appimage.yml --ref <branch>`); the AppImage is then a download
+# on the run's page.
+name: Linux AppImage
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the AppImage
+        run: deploy/linux/appimage/build.sh
+      - name: Try the AppImage
+        # The runner may lack FUSE; the AppImage then runs from a temporary copy of its files.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: node .github/smoke.mjs --appimage dist-appimage/HoudiniDeck-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HoudiniDeck-AppImage
+          path: dist-appimage/HoudiniDeck-x86_64.AppImage
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HoudiniDeck-AppImage
+      - name: Attach the AppImage to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" HoudiniDeck-x86_64.AppImage --repo "$GITHUB_REPOSITORY" --clobber

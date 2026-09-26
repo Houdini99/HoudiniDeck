@@ -8,3 +8,6 @@ data/
 
 # Windows installer builds (deploy/windows/installer/build.ps1)
 dist-installer/
+
+# Linux AppImage builds (deploy/linux/appimage/build.sh)
+dist-appimage/

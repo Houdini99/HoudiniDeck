@@ -1,0 +1,74 @@
+#!/bin/sh
+# HoudiniDeck as an AppImage: the Node.js inside runs the deck, which keeps its deck, settings, images
+# and .env in ~/.local/share/HoudiniDeck (or $STREAMDECK_DATA_DIR), kept across updates.
+#   (no option)    In a terminal: runs the deck there (Ctrl+C stops it). Started from the desktop: runs
+#                  it in the background, opens it in the browser and logs to houdinideck.log in the data
+#                  folder; if it already runs, only opens the browser.
+#   --no-browser   the same, without opening the browser (for autostart)
+#   --stop         stops the deck that runs from an AppImage
+#   --data         opens the data folder
+set -e
+
+here=${APPDIR:-$(dirname "$(readlink -f "$0")")}
+data=${STREAMDECK_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/HoudiniDeck}
+# How --stop finds the deck: the path of its server inside any AppImage (a source checkout differs).
+server_pattern='/usr/lib/houdinideck/server/index\.ts'
+
+running() {
+  pgrep -f "$server_pattern" >/dev/null 2>&1
+}
+
+usage() {
+  sed -n '2,9s/^# \{0,1\}//p' "$here/AppRun"
+}
+
+browser=yes
+case "${1:-}" in
+  '') ;;
+  --no-browser) browser=no ;;
+  --stop)
+    if ! pkill -TERM -f "$server_pattern"; then
+      echo "HoudiniDeck isn't running."
+      exit 0
+    fi
+    # It says goodbye to connected browsers first; one that doesn't answer is dropped after 30 s.
+    i=0
+    while running && [ "$i" -lt 160 ]; do
+      sleep 0.2
+      i=$((i + 1))
+    done
+    if running; then
+      echo "HoudiniDeck didn't stop." >&2
+      exit 1
+    fi
+    echo 'HoudiniDeck stopped.'
+    exit 0
+    ;;
+  --data)
+    mkdir -p "$data"
+    echo "$data"
+    (xdg-open "$data" >/dev/null 2>&1 &)
+    exit 0
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+mkdir -p "$data"
+cd "$data"
+export STREAMDECK_DATA_DIR="$data" NODE_ENV=production
+if [ ! -t 1 ]; then
+  # Started from the desktop: nobody sees the output, so it goes into a file (the last 1 MB or so).
+  log="$data/houdinideck.log"
+  if [ -f "$log" ] && [ "$(wc -c <"$log")" -gt 1048576 ]; then mv -f "$log" "$log.old"; fi
+  exec >>"$log" 2>&1
+  echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---"
+  if [ "$browser" = yes ]; then export STREAMDECK_OPEN_BROWSER=1; fi
+fi
+exec "$here/usr/bin/node" --env-file-if-exists=.env "$here/usr/lib/houdinideck/server/index.ts"
