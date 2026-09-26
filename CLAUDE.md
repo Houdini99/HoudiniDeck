@@ -44,7 +44,7 @@ npm run build && npm start   # production on :3325
 - **Vite HMR sometimes keeps an old Svelte component** in the browser pane after an edit; reload the page before trusting what it shows.
 - **Don't press Open Website, Type Text or keyboard-shortcut buttons while testing on the user's PC**: they act on the real desktop. Sounds are safe with a silent WAV.
 - **Windows can't be tried here.** CI (`.github/workflows/ci.yml`) runs the tests, the real PowerShell helper and `.github/smoke.mjs` (starts `npm start` and `npm run dev:mock`) on a Windows runner; check it after pushing. `.github/workflows/windows-installer.yml` builds the installer (`deploy/windows/installer/`) and installs, runs, updates and uninstalls it there. Keep the installer files ASCII. Tests with shell commands need both an `sh` and a `cmd.exe` version (see `tests/command.test.ts`).
-- **The PC's own browser skips pairing.** To test pairing, open the LAN IP (`http://192.168.1.20:5173`). The mock data directory is `.data-mock/`.
+- **The PC's own browser skips pairing.** To test pairing, open the PC's LAN address on port 5173 (Vite prints it as *Network*). The mock data directory is `.data-mock/`.
 
 ## Working agreements
 
