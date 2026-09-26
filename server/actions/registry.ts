@@ -33,8 +33,8 @@ export interface ExecutorDeps {
   media: Pick<MediaSource, 'currentInstance'>;
   /** Re-reads the system volume after a change. */
   audio: Pick<AudioWatcher, 'refresh'>;
-  /** Run Command buttons work (STREAMDECK_ENABLE_COMMANDS=1). */
-  commandsEnabled: boolean;
+  /** Run Command buttons are turned on (Settings). */
+  commandsEnabled: () => boolean;
   /** On Windows: the helper and media watcher, used instead of the Linux programs. */
   windows?: { helper: WinRequester; media: Pick<WindowsMediaWatcher, 'command'> };
   /** Counter, Toggle and Timer buttons' state. */

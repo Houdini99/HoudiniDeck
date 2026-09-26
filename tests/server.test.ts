@@ -10,7 +10,7 @@ import { startApp, type App } from '../server/app.ts';
 import { startMockObs, type MockObs } from '../server/dev/mock-obs.ts';
 import { readEnv } from '../server/env.ts';
 import { deckRunningOn } from '../server/network.ts';
-import type { ServerMsg } from '../shared/protocol.ts';
+import type { ServerMsg, SettingsView } from '../shared/protocol.ts';
 import { tempDir, waitFor } from './helpers.ts';
 
 let mock: MockObs;
@@ -299,8 +299,45 @@ test('Run Command buttons are refused unless the server allows commands', async 
     op: { op: 'button.set', pageId: init.deck.pages[0].id, slot: '1-0', button: { tap: { type: 'system.command', command: 'id' } } },
   });
   assert.equal(res.ok, false);
-  assert.match(res.ok ? '' : res.error, /STREAMDECK_ENABLE_COMMANDS=1/);
+  assert.match(res.ok ? '' : res.error, /turned off.*Settings/);
   c.ws.close();
+});
+
+test('only the PC itself can turn Run Command buttons on or off; every browser is told', async (t) => {
+  t.after(() => app.settingsStore.update((s) => (s.commands = false)));
+  const paired = connect('192.168.1.20:3325');
+  await paired.next('hello');
+  paired.ws.send(JSON.stringify({ t: 'auth', key: app.settingsStore.settings.accessKey }));
+  const pairedInit = await paired.next('init');
+  const pageId = pairedInit.deck.pages[0].id;
+
+  const view = await paired.request({ t: 'settings', action: 'get' });
+  assert.deepEqual(view.ok && (view.data as SettingsView).commands, { enabled: false, canChange: false });
+  const refused = await paired.request({ t: 'settings.commands', enabled: true });
+  assert.equal(refused.ok, false);
+  assert.match(refused.ok ? '' : refused.error, /PC itself/);
+  assert.equal(app.settingsStore.settings.commands, false);
+
+  const pc = connect(`localhost:${app.port}`);
+  await pc.next('init');
+  const from = paired.messages.length;
+  const on = await pc.request({ t: 'settings.commands', enabled: true });
+  assert.deepEqual(on.ok && (on.data as SettingsView).commands, { enabled: true, canChange: true });
+  assert.equal(app.settingsStore.settings.commands, true, 'saved in settings.json');
+  assert.equal((await paired.next('info', from)).info.commands, true, 'paired devices learn it at once');
+
+  // Now a paired device may add one.
+  const button = { tap: { type: 'system.command', command: process.platform === 'win32' ? 'ver' : 'true' } };
+  const set = await paired.request({ t: 'op', op: { op: 'button.set', pageId, slot: '1-1', button } });
+  assert.equal(set.ok, true);
+
+  const off = await pc.request({ t: 'settings.commands', enabled: false });
+  assert.equal(off.ok, true);
+  assert.equal(app.settingsStore.settings.commands, false);
+  const del = await pc.request({ t: 'op', op: { op: 'button.set', pageId, slot: '1-1', button: null } });
+  assert.equal(del.ok, true, 'a command button can still be deleted while they are off');
+  paired.ws.close();
+  pc.ws.close();
 });
 
 test('stats tiles on screen get live CPU and memory readings', async () => {

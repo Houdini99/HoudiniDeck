@@ -24,7 +24,7 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - **Stats tiles:** the k10temp temperature, and GPU numbers from `nvidia-smi`.
   - **Keyboard shortcuts:** after the user installs ydotool and enables its service (README → Install).
   - **KDE shortcuts:** the list in the editor, and pressing e.g. KWin → Overview.
-  - **Run Command:** only if the user wants it. Start the deck with `STREAMDECK_ENABLE_COMMANDS=1`; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
+  - **Run Command:** only if the user wants it. Turn it on in Settings on the PC itself; with the systemd service, check that apps actually open (the log warns if `WAYLAND_DISPLAY` is missing).
 
 - [ ] **Check the Phase 4 buttons against the real programs and OBS** (built against the mock OBS, fakes and unit tests; see "Phase 4" for how each works):
   - **Play Sound:** an MP3 and a WAV with the real `pw-play`; that OBS's Desktop Audio hears it; a second press stops it; Stop All.
@@ -94,10 +94,10 @@ For each action type:
 
 ### Security rules (keep these)
 
-- **Paired devices are trusted to press buttons**, but running arbitrary commands is a bigger step. So `system.command` (and anything that runs a program the user typed) is **off unless the server is started with `STREAMDECK_ENABLE_COMMANDS=1`**. Enforce it in two places:
+- **Paired devices are trusted to press buttons**, but running arbitrary commands is a bigger step. So `system.command` (and anything that runs a program the user typed) is **off unless it's turned on in Settings from the PC's own browser** (`settings.commands`). Enforce it in two places:
   - In the executor: refuse with a clear message.
   - When saving the deck: `deck/ops.ts` / the hub rejects adding such actions while disabled.
-- **The web UI must not be able to switch this on.** Send the flag to clients in `ServerInfo` so the editor hides the category.
+- **Paired devices must not be able to switch this on.** The hub only accepts `settings.commands` from a trusted-local client (loopback *and* a `localhost` Host header, see `auth.ts`). Send the flag to clients in `ServerInfo` (and a `info` message when it changes) so the editor hides the category.
 - **Never build shell strings from button parameters for the fixed tools.** Use `execFile` with argument arrays for playerctl, wpctl, nvidia-smi and ydotool. On Windows, parameters go to the helper as JSON data, never as PowerShell code.
 - **Webhooks:** only `http:`/`https:` URLs, a 10 s timeout, and no following redirects to other schemes.
 
@@ -130,7 +130,7 @@ For each action type:
   - Example: switch scene → unmute mic → start recording.
 - [x] **`system.command`** (gated), in `server/actions/system.ts` and `server/system/command.ts`:
   - Parameters: `{ command, detached?, timeoutMs? }`, run with `sh -c` in the home folder, without `OBS_PASSWORD` in its environment.
-  - **Gate:** `STREAMDECK_ENABLE_COMMANDS=1` (`env.commandsEnabled`). The executor refuses otherwise. `applyOp` refuses any edit whose result has a command the deck didn't have before (`refuseNewCommands`: added, changed, duplicated, imported, or inside a macro). `ServerInfo.commands` tells the editor, which then hides the action and dims existing command buttons.
+  - **Gate:** `settings.commands` in `settings.json`, switched in Settings by the PC's own browser only (`Hub.setCommands`). The executor refuses otherwise. `applyOp` refuses any edit whose result has a command the deck didn't have before (`refuseNewCommands`: added, changed, duplicated, imported, or inside a macro). `ServerInfo.commands` tells the editor, which then hides the action and dims existing command buttons.
   - Waiting mode (default 30 s timeout): the command leads its own process group, so a timeout stops everything it started. The toast shows the exit code and the last lines of stderr. Programs it leaves in the background don't hold up the button.
   - `detached` (for GUI apps): spawned with `detached: true`, `stdio: 'ignore'`, then `unref()`. It's watched for one second so "command not found" (exit 127) still gets a toast.
   - At startup with commands on, the server warns if `WAYLAND_DISPLAY`/`DISPLAY` or `DBUS_SESSION_BUS_ADDRESS` is missing (e.g. under systemd), since GUI apps then won't open.

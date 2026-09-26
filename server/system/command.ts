@@ -1,4 +1,4 @@
-// Runs the shell commands of Run Command buttons (only when STREAMDECK_ENABLE_COMMANDS=1):
+// Runs the shell commands of Run Command buttons (only when they're turned on in Settings):
 // with `sh -c` on Linux, and with `cmd.exe /d /s /c` on Windows (as Node's own `shell: true` does).
 import { execFile, spawn, type SpawnOptions } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -154,4 +154,17 @@ export function launchCommand(command: string): Promise<number | null> {
 export function outputTail(text: string, lines = 3, maxChars = 300): string {
   const tail = text.trim().split(/\r?\n/).slice(-lines).join('\n');
   return tail.length > maxChars ? `…${tail.slice(-maxChars)}` : tail;
+}
+
+/** Apps started by Run Command buttons need the desktop session's variables (missing e.g. under systemd). */
+export function desktopSessionWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (process.platform !== 'linux') return undefined;
+  const missing = [];
+  if (!env.WAYLAND_DISPLAY && !env.DISPLAY) missing.push('WAYLAND_DISPLAY');
+  if (!env.DBUS_SESSION_BUS_ADDRESS) missing.push('DBUS_SESSION_BUS_ADDRESS');
+  if (missing.length === 0) return undefined;
+  return (
+    `${missing.join(' and ')} not set, so apps started by Run Command buttons may not open. ` +
+    `Under systemd, run: systemctl --user import-environment ${missing.join(' ')}`
+  );
 }

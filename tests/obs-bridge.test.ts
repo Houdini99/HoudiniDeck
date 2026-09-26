@@ -15,7 +15,7 @@ const others = {
   run: runProcess,
   media: { currentInstance: () => undefined },
   audio: { refresh: async () => {} },
-  commandsEnabled: false,
+  commandsEnabled: () => false,
   states: memoryStates(),
   timerTexts: { update: () => {} },
   sounds: { play: async () => {}, stopAll: () => {} },

@@ -152,6 +152,9 @@ class Store {
         this.deck = msg.deck;
         this.history = msg.history;
         break;
+      case 'info':
+        this.info = msg.info;
+        break;
       case 'obs':
         this.syncClock(msg.serverTime);
         this.obs = msg.obs;

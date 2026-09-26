@@ -1,4 +1,4 @@
-// Run Command buttons: off unless the environment allows them, both when saving and when running.
+// Run Command buttons: off unless turned on in Settings, both when saving and when running.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,13 +6,12 @@ import { test } from 'node:test';
 import { ActionError } from '../server/actions/executor.ts';
 import { systemExecutor } from '../server/actions/system.ts';
 import { OpError, applyOp } from '../server/deck/ops.ts';
-import { readEnv } from '../server/env.ts';
-import { commandNotFound, commandProgram, outputTail, shellCommand } from '../server/system/command.ts';
+import { commandNotFound, commandProgram, desktopSessionWarning, outputTail, shellCommand } from '../server/system/command.ts';
 import { actionAutoLabel, availableActionTypes } from '../shared/actions-meta.ts';
 import { emptyExtState } from '../shared/ext-types.ts';
 import { buttonVisual } from '../shared/feedback.ts';
 import { emptyObsState } from '../shared/obs-types.ts';
-import type { ActionOf, Deck } from '../shared/schema.ts';
+import { SettingsSchema, type ActionOf, type Deck } from '../shared/schema.ts';
 import { seqId, tempDir } from './helpers.ts';
 
 type Command = ActionOf<'system.command'>;
@@ -40,7 +39,7 @@ const off = { obs: emptyObsState(), newId: seqId };
 const on = { ...off, commandsEnabled: true };
 
 test('while commands are off, no command can be added, copied, changed or imported', () => {
-  const refused = (fn: () => unknown) => assert.throws(fn, (err: Error) => err instanceof OpError && /STREAMDECK_ENABLE_COMMANDS=1/.test(err.message));
+  const refused = (fn: () => unknown) => assert.throws(fn, (err: Error) => err instanceof OpError && /turned off.*Settings/.test(err.message));
   const d = deck();
   refused(() => applyOp(d, { op: 'button.set', pageId: 'p', slot: '1-0', button: { tap: cmd('rm -rf ~') } }, off));
   refused(() => applyOp(d, { op: 'button.set', pageId: 'p', slot: '0-0', button: { id: 'lights', tap: cmd('~/bin/other.sh') } }, off));
@@ -68,9 +67,15 @@ test('while commands are off, the command buttons a deck already has can still b
   assert.equal(deleted.deck.pages[0].buttons['0-0'], undefined);
 });
 
-test('only STREAMDECK_ENABLE_COMMANDS=1 turns commands on', () => {
-  assert.equal(readEnv({ STREAMDECK_ENABLE_COMMANDS: '1' }).commandsEnabled, true);
-  for (const value of [undefined, '', '0', 'true', 'yes']) assert.equal(readEnv({ STREAMDECK_ENABLE_COMMANDS: value }).commandsEnabled, false);
+test('commands are off in new and older settings files', () => {
+  assert.equal(SettingsSchema.parse({ accessKey: 'k'.repeat(16) }).commands, false);
+  assert.equal(SettingsSchema.parse({ accessKey: 'k'.repeat(16), commands: true }).commands, true);
+});
+
+test('turning commands on warns when apps could not reach the desktop (Linux, e.g. under systemd)', { skip: process.platform !== 'linux' }, () => {
+  assert.equal(desktopSessionWarning({ WAYLAND_DISPLAY: 'wayland-0', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' }), undefined);
+  assert.match(desktopSessionWarning({ DISPLAY: ':0' }) ?? '', /^DBUS_SESSION_BUS_ADDRESS not set.*import-environment DBUS_SESSION_BUS_ADDRESS$/);
+  assert.match(desktopSessionWarning({}) ?? '', /^WAYLAND_DISPLAY and DBUS_SESSION_BUS_ADDRESS not set/);
 });
 
 test('the editor only offers Run Command when the server allows it; such buttons are dimmed otherwise', () => {
@@ -85,7 +90,7 @@ test('the editor only offers Run Command when the server allows it; such buttons
 });
 
 const run = (commandsEnabled: boolean, action: Command) =>
-  systemExecutor({ run: async () => ({ code: 0, stdout: '', stderr: '' }), audio: { refresh: async () => {} }, commandsEnabled })(action, { kind: 'press' });
+  systemExecutor({ run: async () => ({ code: 0, stdout: '', stderr: '' }), audio: { refresh: async () => {} }, commandsEnabled: () => commandsEnabled })(action, { kind: 'press' });
 
 // The same commands for sh (Linux) and cmd.exe (Windows).
 const win = process.platform === 'win32';

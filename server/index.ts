@@ -3,11 +3,12 @@ import { startApp } from './app.ts';
 import { readEnv } from './env.ts';
 import { createLogger, errorMessage } from './log.ts';
 import { deckRunningOn, openInBrowser, pairingUrl, reachableUrls } from './network.ts';
+import { desktopSessionWarning } from './system/command.ts';
 
 const env = readEnv();
 const log = createLogger('server');
 
-async function printBanner(key: string, obsUrl: string): Promise<void> {
+async function printBanner(key: string, obsUrl: string, commands: boolean): Promise<void> {
   const port = env.publicPort;
   const pair = pairingUrl(port, key);
   const qr = await QRCode.toString(pair, { type: 'terminal', small: true });
@@ -27,23 +28,10 @@ async function printBanner(key: string, obsUrl: string): Promise<void> {
       `  or open ${pair}`,
       '',
       `  OBS: ${obsUrl}`,
-      ...(env.commandsEnabled ? ['  Run Command buttons are ON (STREAMDECK_ENABLE_COMMANDS=1): paired devices can run programs on this PC.'] : []),
+      ...(commands ? ['  Run Command buttons are ON (Settings): paired devices can run programs on this PC.'] : []),
       "  Other devices can't connect? Allow the port in your firewall (see README).",
       '',
     ].join('\n'),
-  );
-}
-
-/** Apps started by Run Command buttons need the desktop session's variables (e.g. under systemd). */
-function checkCommandEnvironment(): void {
-  if (!env.commandsEnabled || process.platform !== 'linux') return;
-  const missing = [];
-  if (!process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) missing.push('WAYLAND_DISPLAY');
-  if (!process.env.DBUS_SESSION_BUS_ADDRESS) missing.push('DBUS_SESSION_BUS_ADDRESS');
-  if (missing.length === 0) return;
-  log.warn(
-    `${missing.join(' and ')} not set, so apps started by Run Command buttons may not open. ` +
-      `Under systemd, run: systemctl --user import-environment ${missing.join(' ')}`,
   );
 }
 
@@ -73,9 +61,14 @@ async function main(): Promise<void> {
     }
     throw err;
   }
-  await printBanner(app.settingsStore.settings.accessKey, app.settingsStore.obsConfig(env).url);
+  const { settings } = app.settingsStore;
+  await printBanner(settings.accessKey, app.settingsStore.obsConfig(env).url, settings.commands);
   log.info(`Data directory: ${env.dataDir}`);
-  checkCommandEnvironment();
+  const sessionWarning = settings.commands && desktopSessionWarning();
+  if (sessionWarning) log.warn(sessionWarning);
+  if (process.env.STREAMDECK_ENABLE_COMMANDS !== undefined) {
+    log.warn('STREAMDECK_ENABLE_COMMANDS is no longer used; remove it from .env. Run Command buttons are now turned on in Settings, in the browser on this PC.');
+  }
   if (env.openBrowser) openInBrowser(`http://localhost:${env.publicPort}`);
 
   let stopping = false;
