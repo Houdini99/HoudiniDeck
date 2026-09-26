@@ -7,15 +7,14 @@ Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 
 These need the user's PC and weren't possible where the code was built (a cloud container without OBS, a desktop session or the helper programs):
 
 - [ ] **Test against the real OBS.**
-  - The OBS WebSocket server was off (`~/.config/obs-studio/plugin_config/obs-websocket/config.json` → `server_enabled: false`).
-  - Once the user enables it and saves the password in Settings, check these:
-    - switching between scenes `Scene` and `Switch`;
-    - toggling the `Color` source;
-    - muting `Audio Capture Device (ALSA)`;
+  - The user enables the WebSocket server in OBS (Tools → WebSocket Server Settings) and saves the password in the deck's Settings. Then check these:
+    - switching between two scenes;
+    - toggling a source;
+    - muting an audio input;
     - start, pause and stop a **recording**;
     - Studio Mode plus a transition.
   - **Never start a stream** during testing; it goes live.
-- [ ] **Firewall.** ufw is active. The user runs `sudo ufw allow from 192.168.1.0/24 to any port 3325 proto tcp`; then test from a phone at `http://my-pc.local:3325`.
+- [ ] **Firewall.** ufw is active. The user runs `sudo ufw allow from <LAN subnet> to any port 3325 proto tcp` (README → "Open the deck on a phone or tablet"); then test from a phone at `http://<the PC's name>.local:3325`.
 - [ ] **Autostart (optional).** Install `deploy/virtual-streamdeck.service` as a systemd user unit, only if the user asks. The README has the commands.
 - [ ] Fix anything the real‑OBS test turns up. Real obs-websocket 5.6 may differ from `server/dev/mock-obs.ts` in details: `inputKindCaps`, groups, error codes. Update the mock to match.
 - [ ] **Check the Phase 3 buttons against the real programs.** They were built against fakes and unit tests; each item below says what to look at:
@@ -64,17 +63,17 @@ Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program,
 
 Goal: buttons that do things other than OBS (commands, webhooks, media keys, system volume, hotkeys, macros, Discord) plus a system-stats tile.
 
-### Machine facts (checked 2026‑09‑25)
+### What the Linux actions use
 
-| Need | Status on this PC |
+| Need | What's on the PC |
 |---|---|
-| Media players (MPRIS) | `playerctl` installed; players show up (e.g. `firefox.instance_…`) |
-| System volume | `wpctl` (PipeWire) and `pactl` installed |
-| CPU temperature | `/sys/class/hwmon/*/name == k10temp` (currently hwmon4; **look it up by name**, the numbers change) |
-| GPU | NVIDIA GPU, `nvidia-smi` installed. The AMD iGPU has a hwmon `amdgpu` sensor too |
-| Keystrokes on Wayland (KDE) | `ydotool` **not installed** (in the repos, 1.0.4). `/dev/uinput` already has an ACL `user:<you>:rw-` (seat ACL). `xdotool` exists but only reaches XWayland windows |
-| KDE shortcuts | `qdbus6` installed (`org.kde.kglobalaccel` can trigger any global shortcut) |
-| Discord | Official client (not Vesktop). IPC socket at `$XDG_RUNTIME_DIR/discord-ipc-0` |
+| Media players (MPRIS) | `playerctl`; players show up as e.g. `firefox.instance_…` |
+| System volume | `wpctl` (PipeWire) |
+| CPU temperature | `/sys/class/hwmon/*/name == k10temp` (or `zenpower`, `coretemp`). **Look it up by name**; the `hwmonN` numbers change |
+| GPU | NVIDIA through `nvidia-smi`. An AMD iGPU has a hwmon `amdgpu` sensor too |
+| Keystrokes on Wayland (KDE) | `ydotool` (1.0.4 in the Arch repos). `/dev/uinput` must be writable for the user; desktops usually grant it with a seat ACL (`getfacl /dev/uinput`). `xdotool` only reaches XWayland windows |
+| KDE shortcuts | `org.kde.kglobalaccel` on the session bus can trigger any global shortcut |
+| Discord | IPC socket at `$XDG_RUNTIME_DIR/discord-ipc-0` |
 
 ### How new actions plug in (existing pattern)
 
@@ -141,13 +140,13 @@ For each action type:
   - **GPU %, temperature and VRAM:** one `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv,noheader,nounits` call per poll, only when a GPU tile is shown. Without nvidia-smi the tiles say n/a.
   - Polled every 2 s, only for the metrics on some client's screen: tiles subscribe with `{ t: 'stats', metrics }`, the same pattern as the level meters (`Interest` in the web store).
   - The tile shows a big value with a small bar under it, amber when warm and red when hot (e.g. CPU ≥ 70/85 °C).
-  - **Still to check on the PC:** the k10temp reading, and nvidia-smi's output on the NVIDIA GPU.
+  - **Still to check on the PC:** the k10temp reading, and nvidia-smi's output on a real NVIDIA GPU.
 - [x] **`system.hotkey` via ydotool:** `{ keys: ['KEY_LEFTCTRL', 'KEY_M'], hold? }` → `ydotool key 29:1 50:1 50:0 29:0`.
   - `shared/keys.ts` holds 125 keys with their evdev codes, checked against `linux/input-event-codes.h`, plus labels and `KeyboardEvent.code` names.
   - `hold`: the keys go down on press and up on release (behavior `'hold'`), so a disconnecting device releases them too. E.g. push-to-talk.
   - Errors checked against ydotool 1.0.4's source. It reports a missing daemon on **stdout** ("failed to connect socket …", exit code 2); the toast then gives the `systemctl --user enable --now ydotool` command.
   - **Editor:** `KeysField.svelte` has Ctrl/Shift/Alt/Super toggles plus a grouped key list (works on touch screens), and a recorder for a physical keyboard. Keys are positions on a US layout (Y/Z swap on German keyboards); recording gets that right.
-  - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`). `/dev/uinput` is already writable for the user via ACL.
+  - **Setup (the user does it):** `sudo pacman -S ydotool`, then enable the user service it ships (find the unit with `pacman -Ql ydotool | grep service`). `/dev/uinput` must be writable for the user (usually a seat ACL; check with `getfacl /dev/uinput`).
   - **Still to check on the PC** after that setup.
 - [x] **`kde.shortcut`** `{ component, shortcut, title? }` (the alternative that needs no setup), in `server/system/kde.ts`. It uses `busctl --user --json=short -- call org.kde.kglobalaccel …` instead of qdbus6: busctl comes with systemd and prints JSON.
   - Checked against kglobalacceld's source: the component path is `/component/<unique name>` with anything outside `A–Z a–z 0–9 _` turned into `_`, and `allShortcutInfos` returns `a(ssssssaiai)` starting with unique name, friendly name, component unique, component friendly.

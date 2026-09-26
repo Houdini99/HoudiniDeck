@@ -150,7 +150,7 @@ Phones and tablets need an access key (see [Security](#security)).
      sudo ufw allow from 192.168.1.0/24 to any port 3325 proto tcp comment 'Virtual Stream Deck'
      ```
 
-     To use the deck over your WireGuard tunnel too, add the same rule for `10.8.0.0/24`.
+     To use the deck over a VPN such as WireGuard too, add the same rule for its subnet (e.g. `10.8.0.0/24`).
    - **Windows:** with the installer's firewall option, this is done. Otherwise, the first time the deck starts, Windows asks whether Node.js may use the network: allow it for **private networks**. Your home network must be set to private (Settings → Network & internet → your Wi-Fi or Ethernet → Network profile type: **Private**). If you missed the question, run this in PowerShell as administrator:
 
      ```powershell
@@ -227,7 +227,7 @@ data/                (the Windows installer's version: %LOCALAPPDATA%\HoudiniDec
 
 The deck then runs in a terminal window after you log in; closing that window stops it. After updating the code, run `npm run build` and restart it. Open tablets reload by themselves.
 
-**Linux:** a systemd user unit is included. It assumes the project lives in `~/HoudiniDeck`; edit `WorkingDirectory` if not.
+**Linux:** a systemd user unit is included. It assumes the project lives in `~/HoudiniDeck` (cloned into your home folder); edit `WorkingDirectory` if not.
 
 ```bash
 npm run build
