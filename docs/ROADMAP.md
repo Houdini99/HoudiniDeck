@@ -14,7 +14,7 @@ These need the user's PC and weren't possible where the code was built (a cloud 
     - start, pause and stop a **recording**;
     - Studio Mode plus a transition.
   - **Never start a stream** during testing; it goes live.
-- [ ] **Firewall.** ufw is active. The user runs `sudo ufw allow from <LAN subnet> to any port 3325 proto tcp` (README → "Open the deck on a phone or tablet"); then test from a phone at `http://<the PC's name>.local:3325`.
+- [ ] **Firewall.** ufw is active. The user runs `sudo ufw allow from <LAN subnet> to any port 3325 proto tcp` (README → "Use it on a phone or tablet"); then test from a phone at `http://<the PC's name>.local:3325`.
 - [ ] **Autostart (optional).** Install `deploy/virtual-streamdeck.service` as a systemd user unit, only if the user asks. The README has the commands.
 - [ ] Fix anything the real‑OBS test turns up. Real obs-websocket 5.6 may differ from `server/dev/mock-obs.ts` in details: `inputKindCaps`, groups, error codes. Update the mock to match.
 - [ ] **Check the Phase 3 buttons against the real programs.** They were built against fakes and unit tests; each item below says what to look at:

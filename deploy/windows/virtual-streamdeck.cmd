@@ -1,5 +1,5 @@
 @echo off
-rem Starts the deck like "npm start" does. For Windows' Startup folder: see README, "Start it automatically".
+rem Starts the deck like "npm start" does. For Windows' Startup folder: see README, "Start automatically on login".
 title Virtual Stream Deck
 cd /d "%~dp0..\.."
 set NODE_ENV=production
