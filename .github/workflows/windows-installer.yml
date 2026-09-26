@@ -1,13 +1,14 @@
 # Builds the Windows installer and tries it on a Windows machine (install, run, update, uninstall).
-# Every run keeps the .exe as a download on the run's page; a version tag (v0.1.0, …) also publishes
-# it as a GitHub release.
+# To save Actions minutes it runs only when a release is published (GitHub → Releases → Draft a new
+# release, or `gh release create v0.3.0 --generate-notes`), and attaches the .exe to that release.
+# To try installer changes without a release, start it by hand (Actions → Windows installer → Run
+# workflow, or `gh workflow run windows-installer.yml --ref <branch>`); the .exe is then a download
+# on the run's page.
 name: Windows installer
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +36,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -44,7 +45,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: HoudiniDeck-Setup
-      - name: Publish the release
+      - name: Attach the installer to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" HoudiniDeck-Setup-*.exe --repo "$GITHUB_REPOSITORY" --title "HoudiniDeck $GITHUB_REF_NAME" --generate-notes
+        run: gh release upload "$GITHUB_REF_NAME" HoudiniDeck-Setup-*.exe --repo "$GITHUB_REPOSITORY" --clobber
