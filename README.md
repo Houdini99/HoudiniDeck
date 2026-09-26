@@ -15,7 +15,7 @@ No account, no cloud, no app to install.
 ![Runs on Linux and Windows 10/11](https://img.shields.io/badge/runs%20on-Linux%20%7C%20Windows%2010%2F11-3868d6)
 [![MIT license](https://img.shields.io/github/license/Houdini99/HoudiniDeck?color=2e9d5c)](LICENSE)
 
-**[Download for Windows](https://github.com/Houdini99/HoudiniDeck/releases/latest)** · [Install on Linux](#linux) · [Quick start](#quick-start) · [Button types](#button-types) · [FAQ](#faq)
+**[Download for Windows](https://github.com/Houdini99/HoudiniDeck/releases/latest)** · **[Download for Linux](#linux-appimage)** · [Quick start](#quick-start) · [Button types](#button-types) · [FAQ](#faq)
 
 <img src="docs/images/hero.webp" width="100%" alt="HoudiniDeck on a tablet and a phone, both showing the same live stream: scene buttons with live pictures, Stream and Record buttons, mute buttons, volume faders with level meters, a countdown, a death counter, the song that's playing, and CPU, GPU and bitrate tiles">
 
@@ -26,7 +26,7 @@ No account, no cloud, no app to install.
 - [Features](#features)
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
-- [Install](#install): [Windows](#windows-installer) · [Linux](#linux) · [Windows from source](#windows-from-source) · [Updating](#updating) · [Uninstalling](#uninstalling)
+- [Install](#install): [Windows](#windows-installer) · [Linux](#linux-appimage) · [Linux from source](#linux-from-source) · [Windows from source](#windows-from-source) · [Updating](#updating) · [Uninstalling](#uninstalling)
 - [Use it on a phone or tablet](#use-it-on-a-phone-or-tablet)
 - [Using the deck](#using-the-deck)
 - [Button types](#button-types)
@@ -99,8 +99,8 @@ Buttons that act on the PC itself use its own programs:
 
 1. **Install and start HoudiniDeck** on the PC that runs OBS:
    - Windows: [run the installer](#windows-installer).
-   - Linux: [a few commands](#linux).
-2. **Open it on the PC** at <http://localhost:3325>. The Windows Start menu entry opens it for you.
+   - Linux: [download the AppImage](#linux-appimage).
+2. **Open it on the PC** at <http://localhost:3325>. The Windows Start menu entry and a double-clicked AppImage open it for you.
 3. **Connect OBS.**
    1. In OBS, open **Tools → WebSocket Server Settings**, tick **Enable WebSocket server** (keep authentication on), click **Show Connect Info** and copy the password.
    2. On the deck, open **Settings** (⚙), paste the password under *OBS connection* and click **Save and connect**.
@@ -115,7 +115,7 @@ You need:
 
 - **A PC with Linux or Windows 10/11** that runs OBS.
 - **OBS Studio 28 or newer.** It has obs-websocket 5 built in.
-- **Node.js 24.2 or newer**, except with the Windows installer, which brings its own. Node runs the server's TypeScript directly, so there's no build step for the server.
+- **Node.js 24.2 or newer**, except with the Windows installer and the Linux AppImage, which bring their own. Node runs the server's TypeScript directly, so there's no build step for the server.
 
 ### Windows (installer)
 
@@ -132,7 +132,31 @@ Download `HoudiniDeck-Setup-<version>.exe` from the [latest release](https://git
 - **Your deck, settings and images** live in `%LOCALAPPDATA%\HoudiniDeck` (Start menu → **HoudiniDeck data folder**).
 - **Programs:** media keys, system volume and keyboard shortcuts use Windows PowerShell, which every Windows has. The GPU tiles use `nvidia-smi`, which comes with the NVIDIA driver.
 
-### Linux
+### Linux (AppImage)
+
+One file that runs on most distributions: x86_64 with glibc 2.28 or newer (from about 2019 on). It brings its own Node.js, so there's nothing to build.
+
+1. Download it and make it executable:
+
+   ```bash
+   mkdir -p ~/Applications
+   curl -L -o ~/Applications/HoudiniDeck-x86_64.AppImage https://github.com/Houdini99/HoudiniDeck/releases/latest/download/HoudiniDeck-x86_64.AppImage
+   chmod +x ~/Applications/HoudiniDeck-x86_64.AppImage
+   ```
+
+   Or download `HoudiniDeck-x86_64.AppImage` from the [latest release](https://github.com/Houdini99/HoudiniDeck/releases/latest) and mark it as executable (file manager → Properties → Permissions).
+2. Start it:
+   - **Double-click it** in the file manager. The deck starts in the background and opens in your browser; doing it again while it runs just opens the browser.
+   - **Or run it in a terminal** (`~/Applications/HoudiniDeck-x86_64.AppImage`). It prints the addresses and the pairing QR code there, and Ctrl+C stops it.
+
+- **Stop it:** `~/Applications/HoudiniDeck-x86_64.AppImage --stop`.
+- **Your deck, settings and images** live in `~/.local/share/HoudiniDeck` (`--data` opens it). A `.env` file goes there too. Started from the desktop, the deck writes its messages to `houdinideck.log` in that folder.
+- **Coming from a source install?** Stop both, then copy what's in its `data/` folder into `~/.local/share/HoudiniDeck`.
+- **Programs:** the buttons that act on the PC use the same [programs](#programs-for-the-pc-buttons-linux) as a source install.
+
+### Linux (from source)
+
+For development, or to run the newest code from GitHub.
 
 1. Install Node.js 24.2 or newer and git. On Arch or CachyOS:
 
@@ -151,25 +175,27 @@ Download `HoudiniDeck-Setup-<version>.exe` from the [latest release](https://git
    npm start
    ```
 
-3. Optional: the programs behind the buttons that act on the PC. OBS buttons need none of them.
+### Programs for the PC buttons (Linux)
 
-   | For | Program | On Arch / CachyOS |
-   |---|---|---|
-   | Media Keys | `playerctl` | `sudo pacman -S playerctl` |
-   | System Volume | `wpctl` | comes with PipeWire (WirePlumber) |
-   | Play Sound | `pw-play` (or `paplay`, `ffplay`) | comes with PipeWire |
-   | Keyboard Shortcut, Type Text | `ydotool` 1.0 or newer, and its service | `sudo pacman -S ydotool` (see below) |
-   | Type Text outside KDE Plasma | `wl-copy` | `sudo pacman -S wl-clipboard` |
-   | GPU tiles | `nvidia-smi` | comes with the NVIDIA driver |
-   | KDE Shortcut | `busctl` | comes with systemd |
+Optional, for the AppImage and source installs alike: the programs behind the buttons that act on the PC. OBS buttons need none of them.
 
-   `ydotool` types through the kernel, so it works on Wayland. Its service needs write access to `/dev/uinput`:
+| For | Program | On Arch / CachyOS |
+|---|---|---|
+| Media Keys | `playerctl` | `sudo pacman -S playerctl` |
+| System Volume | `wpctl` | comes with PipeWire (WirePlumber) |
+| Play Sound | `pw-play` (or `paplay`, `ffplay`) | comes with PipeWire |
+| Keyboard Shortcut, Type Text | `ydotool` 1.0 or newer, and its service | `sudo pacman -S ydotool` (see below) |
+| Type Text outside KDE Plasma | `wl-copy` | `sudo pacman -S wl-clipboard` |
+| GPU tiles | `nvidia-smi` | comes with the NVIDIA driver |
+| KDE Shortcut | `busctl` | comes with systemd |
 
-   ```bash
-   sudo pacman -S ydotool
-   pacman -Ql ydotool | grep service           # shows where its service unit is
-   systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
-   ```
+`ydotool` types through the kernel, so it works on Wayland. Its service needs write access to `/dev/uinput`:
+
+```bash
+sudo pacman -S ydotool
+pacman -Ql ydotool | grep service           # shows where its service unit is
+systemctl --user enable --now ydotool       # if the unit is under /usr/lib/systemd/user
+```
 
 ### Windows (from source)
 
@@ -207,6 +233,7 @@ For development, or to run the newest code from GitHub.
 ### Updating
 
 - **Windows installer:** run the newer installer. It stops the deck and keeps your deck and settings.
+- **Linux AppImage:** stop it (`--stop`), download it again with the same `curl` command, and start it. Your deck stays in `~/.local/share/HoudiniDeck`.
 - **From source:** in the deck's folder, stop it (Ctrl+C), then run:
 
   ```bash
@@ -223,6 +250,7 @@ Open tablets reload by themselves.
 - **Windows installer:** open Settings → Apps → Installed apps → **HoudiniDeck** → Uninstall.
   - It removes the program, its shortcuts and its firewall rule.
   - It asks whether to delete your deck and settings too.
+- **Linux AppImage:** stop it (`--stop`), then delete the AppImage, and `~/.local/share/HoudiniDeck` unless you want to keep your deck. If you set up [autostart](#start-automatically-on-login), delete `~/.config/autostart/houdinideck.desktop` too.
 - **From source:** delete the folder. Your deck lives in its `data/` folder, so export it first (Settings → Backup) if you want to keep it. If you set up [autostart](#start-automatically-on-login), remove that too.
 
 ## Use it on a phone or tablet
@@ -370,20 +398,21 @@ Everything can be set in the deck's Settings. These environment variables overri
 | `HOST` | `0.0.0.0` | Interface to bind (`127.0.0.1` = this PC only) |
 | `OBS_URL` | `ws://127.0.0.1:4455` | obs-websocket address |
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL` or `OBS_PASSWORD` is set, Settings can't change the connection |
-| `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored. The Windows installer's version always uses `%LOCALAPPDATA%\HoudiniDeck` |
+| `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored. The Windows installer's version always uses `%LOCALAPPDATA%\HoudiniDeck`, the AppImage `~/.local/share/HoudiniDeck` unless you set this |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 The easiest place for them is a `.env` file (see [`.env.example`](.env.example)), on Linux and Windows alike:
 
 - **From source:** in the project folder.
 - **Windows installer:** in its data folder (Start menu → **HoudiniDeck data folder**); restart the deck afterwards.
+- **Linux AppImage:** in `~/.local/share/HoudiniDeck`; restart the deck afterwards.
 
 To set one for a single run instead: `PORT=4000 npm start` in bash, or `$env:PORT=4000; npm start` in PowerShell.
 
 ### Data and backups
 
 ```
-data/                (the Windows installer's version: %LOCALAPPDATA%\HoudiniDeck)
+data/                (Windows installer: %LOCALAPPDATA%\HoudiniDeck, AppImage: ~/.local/share/HoudiniDeck)
   deck.json          pages and buttons
   settings.json      OBS connection + access key (only you can read it)
   button-state.json  counter counts, running timers and which toggles are on
@@ -417,7 +446,21 @@ The deck then runs in a terminal window after you log in; closing that window st
 </details>
 
 <details>
-<summary><b>Linux (systemd user service)</b></summary>
+<summary><b>Linux, with the AppImage</b></summary>
+
+An autostart entry starts it with your desktop session (without opening the browser), so Run Command and Open Website buttons work too:
+
+```bash
+mkdir -p ~/.config/autostart
+printf '[Desktop Entry]\nType=Application\nName=HoudiniDeck\nExec=%s --no-browser\n' ~/Applications/HoudiniDeck-x86_64.AppImage > ~/.config/autostart/houdinideck.desktop
+```
+
+To turn it off, delete `~/.config/autostart/houdinideck.desktop`. Updating the AppImage keeps it working, since the file name stays the same.
+
+</details>
+
+<details>
+<summary><b>Linux, from source (systemd user service)</b></summary>
 
 A systemd user unit is included. It assumes the project lives in `~/HoudiniDeck` (cloned into your home folder); edit `WorkingDirectory` if not.
 
@@ -508,6 +551,15 @@ The deck controls your stream, so it's locked down even on a home network:
 </details>
 
 <details>
+<summary><b>Linux AppImage</b></summary>
+
+- **It doesn't start and mentions FUSE:** AppImages need FUSE. Install your distribution's `fuse3` package, or start it with `--appimage-extract-and-run`; it then unpacks itself into `/tmp` (about 170 MB) and reuses that.
+- **Nothing seems to happen on a double-click:** check that the file is executable, and look at `~/.local/share/HoudiniDeck/houdinideck.log`.
+- **"Port 3325 is already in use":** another copy runs, e.g. from the autostart entry or a source install. `--stop` stops one that runs from an AppImage.
+
+</details>
+
+<details>
 <summary><b>The tablet's screen turns off</b></summary>
 
 - Keep-the-screen-on needs one tap after the page loads.
@@ -592,9 +644,9 @@ server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storag
           on Windows, one PowerShell helper does their jobs (system/windows/)
 web/      Svelte 5 app (deck, editor, settings)
 tests/    node:test suites
-deploy/   systemd user unit; for Windows a start script and the installer (windows/installer/)
+deploy/   systemd user unit, the Linux AppImage (linux/appimage/); for Windows a start script and the installer (windows/installer/)
 docs/     roadmap and the pictures in this README
-.github/  CI: tests and a start-up check on Linux and Windows; building and trying the Windows installer
+.github/  CI: tests and a start-up check on Linux and Windows; building and trying the Windows installer and the Linux AppImage
 ```
 
 ### Adding a new kind of button action
