@@ -335,6 +335,8 @@ export const SettingsSchema = z.object({
     })
     .default({ url: DEFAULT_OBS_URL, password: '' }),
   accessKey: z.string().min(16),
+  /** Run Command buttons work. Only the PC's own browser can turn this on or off (Settings). */
+  commands: z.boolean().default(false),
 });
 
 // ---- client → server messages -------------------------------------------------------------
@@ -377,6 +379,8 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers', 'kdeShortcuts']) }),
   z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
+  /** Allow or forbid Run Command buttons (refused unless it comes from the PC's own browser). */
+  z.object({ t: z.literal('settings.commands'), reqId: ReqId, enabled: z.boolean() }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
   /** The stats tiles this browser shows (polled only while someone looks at them). */
   z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),

@@ -21,6 +21,7 @@ import type { SceneThumbnails } from './obs/thumbnails.ts';
 import { newId, type DeckStore } from './store/deck-store.ts';
 import { newAccessKey, type SettingsStore } from './store/settings-store.ts';
 import type { AudioWatcher } from './system/audio.ts';
+import { desktopSessionWarning } from './system/command.ts';
 import type { MediaSource } from './system/media.ts';
 import type { StatsWatcher } from './system/stats.ts';
 
@@ -196,6 +197,8 @@ export class Hub {
         return this.reply(client, msg.reqId, () => this.settingsAction(client, msg.action));
       case 'settings.obs':
         return this.reply(client, msg.reqId, () => this.setObs(client, msg.url, msg.password));
+      case 'settings.commands':
+        return this.reply(client, msg.reqId, () => this.setCommands(client, msg.enabled));
       case 'meters':
         client.meters = new Set(msg.inputs);
         this.updateInterest();
@@ -244,7 +247,7 @@ export class Hub {
       const result = applyOp(before, op, {
         obs: bridge.state,
         newId,
-        commandsEnabled: this.deps.env.commandsEnabled,
+        commandsEnabled: this.deps.settingsStore.settings.commands,
         history: this.history,
       });
       const valid = DeckSchema.safeParse(result.deck);
@@ -276,12 +279,13 @@ export class Hub {
     }
   }
 
-  private async settingsView(): Promise<SettingsView> {
+  private async settingsView(client: Client): Promise<SettingsView> {
     const { settingsStore, env } = this.deps;
     const obs = settingsStore.obsConfig(env);
     const url = pairingUrl(env.publicPort, settingsStore.settings.accessKey);
     return {
       obs: { url: obs.url, hasPassword: obs.password !== '', fromEnv: obs.fromEnv },
+      commands: { enabled: settingsStore.settings.commands, canChange: client.trustedLocal },
       pairing: { url, qrSvg: await QRCode.toString(url, { type: 'svg', margin: 1 }) },
     };
   }
@@ -290,7 +294,7 @@ export class Hub {
     const { settingsStore, bridge, log } = this.deps;
     switch (action) {
       case 'get':
-        return this.settingsView();
+        return this.settingsView(client);
       case 'reconnectObs':
         await bridge.reconnectNow();
         return {};
@@ -303,7 +307,7 @@ export class Hub {
           this.send(other, { t: 'authError', reason: 'key-rotated' });
           other.ws.close(CLOSE.authFailed, 'key rotated');
         }
-        return { key, ...(await this.settingsView()) };
+        return { key, ...(await this.settingsView(client)) };
       }
     }
   }
@@ -323,7 +327,27 @@ export class Hub {
     log.info(`OBS connection changed to ${url} (from ${client.trustedLocal ? 'this PC' : 'a paired device'})`);
     const obs = settingsStore.obsConfig(env);
     await bridge.configure(obs.url, obs.password);
-    return this.settingsView();
+    return this.settingsView(client);
+  }
+
+  /**
+   * Run Command buttons let every paired device run programs as the user, so only someone at the PC
+   * may turn them on (or off): a paired phone can't give itself that power.
+   */
+  private async setCommands(client: Client, enabled: boolean): Promise<SettingsView> {
+    const { settingsStore, log, info } = this.deps;
+    if (!client.trustedLocal) {
+      throw new OpError('Run Command buttons can only be turned on or off in the browser on the PC itself (http://localhost).');
+    }
+    if (settingsStore.settings.commands !== enabled) {
+      await settingsStore.update((s) => (s.commands = enabled));
+      if (enabled) log.warn('Run Command buttons turned ON: paired devices can run programs on this PC');
+      else log.info('Run Command buttons turned off');
+      const sessionWarning = enabled && desktopSessionWarning();
+      if (sessionWarning) log.warn(sessionWarning);
+      this.broadcast({ t: 'info', info: info() });
+    }
+    return this.settingsView(client);
   }
 
   private send(client: Client, msg: ServerMsg): void {

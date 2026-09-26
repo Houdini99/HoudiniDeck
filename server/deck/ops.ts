@@ -12,7 +12,7 @@ export class OpError extends Error {}
 export interface OpContext {
   obs: ObsState;
   newId: () => string;
-  /** Whether Run Command buttons may be added or changed (STREAMDECK_ENABLE_COMMANDS=1). */
+  /** Whether Run Command buttons may be added or changed (turned on in Settings). */
   commandsEnabled?: boolean;
   /** For deck.undo and deck.redo. */
   history?: Pick<DeckHistory, 'nextUndo' | 'nextRedo'>;
@@ -75,7 +75,7 @@ function refuseNewCommands(before: Deck, after: Deck): void {
   for (const command of commandActions(after)) {
     const left = existing.get(command) ?? 0;
     if (left === 0) {
-      throw new OpError('Run Command buttons are turned off on this server. Start it with STREAMDECK_ENABLE_COMMANDS=1 to allow them.');
+      throw new OpError('Run Command buttons are turned off. Turn them on in Settings, in the browser on the PC itself.');
     }
     existing.set(command, left - 1);
   }

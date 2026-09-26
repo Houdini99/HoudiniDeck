@@ -63,7 +63,7 @@ test('on Windows, System Volume and Keyboard Shortcut buttons go to the helper',
   const { helper, requests } = fakeRequester();
   let refreshed = 0;
   const run = async () => assert.fail('no Linux programs on Windows');
-  const execute = systemExecutor({ run, audio: { refresh: async () => void refreshed++ }, commandsEnabled: false, windows: helper });
+  const execute = systemExecutor({ run, audio: { refresh: async () => void refreshed++ }, commandsEnabled: () => false, windows: helper });
   const volume = (a: Partial<ActionOf<'system.volume'>>): ActionOf<'system.volume'> => ({ type: 'system.volume', target: 'output', mode: 'toggleMute', ...a });
 
   await execute(volume({}), { kind: 'press' });

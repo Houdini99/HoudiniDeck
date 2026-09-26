@@ -125,7 +125,7 @@ export interface ActionMeta<T extends ActionType = ActionType> {
   create: () => ActionOf<T>;
   autoLabel: (a: ActionOf<T>, ctx: LabelCtx) => string;
   confirmByDefault?: boolean;
-  /** Only works when the server allows commands (STREAMDECK_ENABLE_COMMANDS=1). */
+  /** Only works when Run Command buttons are turned on (Settings, on the PC itself). */
   needsCommands?: boolean;
   /** The operating systems (Node's process.platform) where the server can run it; unset means all. */
   platforms?: readonly string[];

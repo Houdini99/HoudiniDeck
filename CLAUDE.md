@@ -34,7 +34,7 @@ npm run build && npm start   # production on :3325
   - Clients send button IDs, never raw actions or OBS calls.
   - Keep the access key out of cookies.
   - The OBS password is write-only from the UI.
-  - Command-running actions are gated by the env flag, which the UI cannot set.
+  - Command-running actions are gated by `settings.commands`, which only the PC's own browser (trusted local) may change, never a paired device.
 
 ## Testing tips
 

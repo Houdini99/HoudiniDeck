@@ -43,7 +43,7 @@ function setup(answer: RunResult | 'missing' = { code: 0, stdout: '', stderr: ''
     if (answer === 'missing') throw Object.assign(new Error('spawn ydotool ENOENT'), { code: 'ENOENT' });
     return answer;
   };
-  const execute = systemExecutor({ run, audio: { refresh: async () => {} }, commandsEnabled: false });
+  const execute = systemExecutor({ run, audio: { refresh: async () => {} }, commandsEnabled: () => false });
   return { calls, execute };
 }
 
@@ -151,7 +151,7 @@ test('Type Text on Windows goes to the helper as text', async () => {
       return null as T;
     },
   };
-  const execute = systemExecutor({ run: async () => assert.fail('no Linux programs'), audio: { refresh: async () => {} }, commandsEnabled: false, windows: helper });
+  const execute = systemExecutor({ run: async () => assert.fail('no Linux programs'), audio: { refresh: async () => {} }, commandsEnabled: () => false, windows: helper });
   await execute({ type: 'system.text', text: 'GG ✌️', enter: true }, { kind: 'press' });
   assert.deepEqual(requests, [{ op: 'text', args: { text: 'GG ✌️', enter: true } }]);
 });

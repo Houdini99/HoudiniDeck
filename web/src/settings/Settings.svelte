@@ -59,6 +59,21 @@
     }
   }
 
+  async function setCommands(e: Event & { currentTarget: HTMLInputElement }): Promise<void> {
+    const input = e.currentTarget;
+    const enabled = input.checked;
+    if (enabled && !confirm('Allow Run Command buttons? Every paired phone or tablet can then run any program on this PC as you.')) {
+      input.checked = false;
+      return;
+    }
+    try {
+      view = await store.request<SettingsView>({ t: 'settings.commands', enabled });
+    } catch (err) {
+      input.checked = !enabled;
+      store.toast((err as Error).message, 'error');
+    }
+  }
+
   async function copyLink(input: HTMLInputElement): Promise<void> {
     if (!view) return;
     try {
@@ -180,6 +195,24 @@
               </div>
             </div>
           </div>
+        {:else}
+          <p class="hint">Loading…</p>
+        {/if}
+      </section>
+
+      <section class="group">
+        <h3 class="section-title">Run Command buttons</h3>
+        {#if view}
+          <label class="toggle">
+            <span>
+              Allow Run Command buttons
+              <small>They start programs and scripts on this PC. While this is on, every paired device can run any program as you.</small>
+            </span>
+            <input type="checkbox" checked={view.commands.enabled} disabled={!view.commands.canChange} onchange={setCommands} />
+          </label>
+          {#if !view.commands.canChange}
+            <p class="hint">For safety, only the browser on the PC itself (http://localhost:{location.port || '80'}) can change this.</p>
+          {/if}
         {:else}
           <p class="hint">Loading…</p>
         {/if}

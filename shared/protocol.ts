@@ -13,7 +13,7 @@ export interface ServerInfo {
   hostname: string;
   /** URLs other devices can use to reach the deck. */
   urls: string[];
-  /** Whether Run Command buttons work (the server was started with STREAMDECK_ENABLE_COMMANDS=1). */
+  /** Whether Run Command buttons work (turned on in Settings on the PC itself). */
   commands: boolean;
   /** The server's operating system (Node's process.platform: 'linux', 'win32', …); some actions only work on some. */
   platform: string;
@@ -28,6 +28,8 @@ export interface PairingInfo {
 
 export interface SettingsView {
   obs: { url: string; hasPassword: boolean; fromEnv: boolean };
+  /** Run Command buttons; only the PC's own browser may change this (`canChange`). */
+  commands: { enabled: boolean; canChange: boolean };
   pairing: PairingInfo;
 }
 
@@ -56,6 +58,8 @@ export type ServerMsg =
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }
   | { t: 'init'; buildId: string; serverTime: number; deck: Deck; history: HistoryInfo; obs: ObsState; ext: ExtState; info: ServerInfo }
   | { t: 'deck'; deck: Deck; history: HistoryInfo }
+  /** The server info changed (e.g. Run Command buttons were turned on or off). */
+  | { t: 'info'; info: ServerInfo }
   | { t: 'obs'; obs: ObsState; serverTime: number }
   | { t: 'ext'; ext: ExtState }
   | { t: 'meters'; levels: Record<string, number> }

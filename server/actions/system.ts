@@ -1,6 +1,6 @@
 // The system.* family: the PC itself. The default speakers and microphone (via wpctl), key presses
-// and typed text (via ydotool), web pages in its browser, and shell commands (only when the server was
-// started with STREAMDECK_ENABLE_COMMANDS=1).
+// and typed text (via ydotool), web pages in its browser, and shell commands (only when they're turned
+// on in Settings on the PC itself).
 // On Windows, the helper does the speakers, microphone and keys (see ../system/windows/).
 import type { ActionOf } from '../../shared/schema.ts';
 import { AUDIO_DEVICE_IDS, type AudioWatcher } from '../system/audio.ts';
@@ -19,8 +19,8 @@ export interface SystemDeps {
   run: Runner;
   /** Re-read the volumes right after changing one, so buttons update at once. */
   audio: Pick<AudioWatcher, 'refresh'>;
-  /** STREAMDECK_ENABLE_COMMANDS=1; only the environment can turn this on. */
-  commandsEnabled: boolean;
+  /** Run Command buttons are turned on (Settings; only the PC's own browser can change it). */
+  commandsEnabled: () => boolean;
   /** On Windows: the helper, which sets the volume and presses keys instead of wpctl and ydotool. */
   windows?: WinRequester;
   /** Starts the browser for Open Website (tests pass a fake). */
@@ -33,7 +33,7 @@ export function systemExecutor(deps: SystemDeps): Executor<'system'> {
       case 'system.volume':
         return setVolume(action, phase, deps);
       case 'system.command':
-        return runCommandAction(action, deps.commandsEnabled);
+        return runCommandAction(action, deps.commandsEnabled());
       case 'system.stats':
         return; // a display: tapping it does nothing
       case 'system.hotkey':
@@ -75,7 +75,7 @@ function pressKeys(action: ActionOf<'system.hotkey'>, phase: Phase, run: Runner)
 }
 
 async function runCommandAction(action: ActionOf<'system.command'>, enabled: boolean): Promise<void> {
-  if (!enabled) throw new ActionError('Running commands is turned off. Start the deck with STREAMDECK_ENABLE_COMMANDS=1 to allow it.');
+  if (!enabled) throw new ActionError('Running commands is turned off. Turn it on in Settings, in the browser on the PC itself.');
   if (action.detached) {
     const code = await launchCommand(action.command);
     if (!code) return; // still running, or done already

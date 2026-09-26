@@ -78,7 +78,7 @@ Download `HoudiniDeck-Setup-<version>.exe` from the [Releases page](https://gith
 - **"Windows protected your PC":** the installer isn't code-signed, so SmartScreen warns about it. Click **More info → Run anyway**.
 - **Options while installing:** let phones and tablets connect (a Windows Firewall rule, private networks only), start HoudiniDeck when you log in, and a desktop icon.
 - **Start it** from the Start menu (**HoudiniDeck**); it opens in your browser. The terminal window that comes with it is the deck itself: closing it stops the deck. Starting it again while it runs just opens the browser.
-- **Your deck, settings and images** live in `%LOCALAPPDATA%\HoudiniDeck` (Start menu → **HoudiniDeck data folder**). Settings such as `PORT` or `STREAMDECK_ENABLE_COMMANDS=1` go into a `.env` file there (see [Configuration](#configuration)).
+- **Your deck, settings and images** live in `%LOCALAPPDATA%\HoudiniDeck` (Start menu → **HoudiniDeck data folder**). Settings such as `PORT` go into a `.env` file there (see [Configuration](#configuration)).
 - **Update:** run the newer installer. It stops the deck and keeps your deck and settings.
 - **Uninstall:** Settings → Apps → Installed apps → **HoudiniDeck** → Uninstall. It removes the program, its shortcuts and its firewall rule, and asks whether to delete your deck and settings too.
 
@@ -199,7 +199,6 @@ Everything can be set from the UI. These environment variables, optionally in a 
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL`/`OBS_PASSWORD` are set, Settings can't change the connection |
 | `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored (the Windows installer's version: `%LOCALAPPDATA%\HoudiniDeck`, fixed) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
-| `STREAMDECK_ENABLE_COMMANDS` | – | `1` allows Run Command buttons. Only this variable can turn them on, never the web UI |
 
 The easiest place for them is the `.env` file, on Linux and Windows alike: in the project folder, or for the Windows installer's version in its data folder (Start menu → **HoudiniDeck data folder**; restart the deck afterwards). To set one for a single run instead: `PORT=4000 npm start` in bash, `$env:PORT=4000; npm start` in PowerShell.
 
@@ -238,7 +237,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now virtual-streamdeck.service
 ```
 
-To allow Run Command buttons in the service, put `STREAMDECK_ENABLE_COMMANDS=1` in `.env`. Apps they start need your desktop session's variables. Plasma normally passes them to systemd; if the log warns that `WAYLAND_DISPLAY` is not set, run `systemctl --user import-environment WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` and restart the service.
+Run Command buttons started by the service need your desktop session's variables. Plasma normally passes them to systemd; if the log warns that `WAYLAND_DISPLAY` is not set, run `systemctl --user import-environment WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` and restart the service.
 
 Read the logs with `journalctl --user -u virtual-streamdeck -f`. After updating the code, run `npm run build` and `systemctl --user restart virtual-streamdeck`. Open tablets reload by themselves.
 
@@ -255,7 +254,7 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Secrets stay on the server:** the OBS password is never sent to browsers, and `settings.json` is readable only by you (on Windows, its access list names only your account).
 - **Uploads:** only real images are accepted (checked by content), and they're served with `nosniff` and a sandboxing CSP.
 - **Run Command buttons are off by default.**
-  - Turned on, they let every paired device run any program as you. So they only work when the server was started with `STREAMDECK_ENABLE_COMMANDS=1`, and the web UI can't change that.
+  - Turned on, they let every paired device run any program as you. So only the browser on the PC itself (`http://localhost`) can turn them on or off: **Settings → Run Command buttons**. Paired phones and tablets see the switch but can't use it. The choice is saved in `settings.json`.
   - While they're off, command buttons are dimmed and refused, and none can be added, changed or imported. Existing ones can still be moved, relabeled or deleted.
   - Commands run in your home folder, with `sh -c` on Linux and `cmd.exe /c` on Windows; the OBS password is kept out of their environment.
   - On Windows, **Start an app** runs e.g. `start "" "C:\Program Files\VideoLAN\VLC\vlc.exe"` or `notepad`; a PowerShell script needs `powershell -ExecutionPolicy Bypass -File C:\path\to\script.ps1`.
