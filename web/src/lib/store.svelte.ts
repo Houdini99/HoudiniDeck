@@ -63,6 +63,8 @@ class Store {
   /** Media players and other state from outside OBS. */
   ext = $state.raw<ExtState>(emptyExtState());
   info = $state.raw<ServerInfo | null>(null);
+  /** This browser runs on the PC itself (it may install updates). */
+  local = $state(false);
   meters = $state.raw<Record<string, number>>({});
   /** Live pictures of the scenes that scene buttons on screen show (data: URLs by scene name). */
   thumbs = $state.raw<Record<string, string>>({});
@@ -76,6 +78,7 @@ class Store {
   backStack = $state<string[]>([]);
   editMode = $state(false);
   settingsOpen = $state(false);
+  updateOpen = $state(false);
   pagesOpen = $state(false);
   editing = $state<{ pageId: string; slot: string } | null>(null);
   dragOverPage = $state<string | null>(null);
@@ -89,6 +92,15 @@ class Store {
     commands: this.info?.commands,
     platform: this.info?.platform,
     thumbs: this.thumbs,
+  });
+
+  /** An update is being installed; the deck restarts (the last info stays while the connection is down). */
+  updating = $derived(['downloading', 'installing', 'restarting'].includes(this.info?.update.state ?? ''));
+
+  /** Show the update notice: a new version this device hasn't put off, or an update that runs. */
+  updateNotice = $derived.by(() => {
+    const available = this.info?.update.available;
+    return this.updating || (!!available && available.version !== prefs.skippedUpdate);
   });
 
   currentPage: Page | undefined = $derived.by(() => {
@@ -142,6 +154,7 @@ class Store {
         this.obs = msg.obs;
         this.ext = msg.ext;
         this.info = msg.info;
+        this.local = msg.local;
         this.pairing = null;
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
         this.meterInterest.flush();

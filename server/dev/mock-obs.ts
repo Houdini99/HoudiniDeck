@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { packageVersion } from '../env.ts';
 
 const Op = { Hello: 0, Identify: 1, Identified: 2, Reidentify: 3, Event: 5, Request: 6, RequestResponse: 7, RequestBatch: 8, RequestBatchResponse: 9 };
 const Intent = {
@@ -623,6 +624,25 @@ export async function startMockObs(opts: MockObsOptions = {}): Promise<MockObs> 
   };
 }
 
+/**
+ * A made-up release one patch newer than this code, as GitHub's API describes it, for trying the update
+ * notice: `STREAMDECK_UPDATE_FEED=http://127.0.0.1:4457/release npm run dev:mock`. Its downloads are
+ * 2 MB of filler (with the right checksum).
+ */
+function fakeRelease(base: string, download: Buffer) {
+  const [major, minor, patch] = packageVersion().split('.').map(Number);
+  const version = `${major}.${minor}.${patch + 1}`;
+  const digest = `sha256:${createHash('sha256').update(download).digest('hex')}`;
+  const asset = (name: string) => ({ name, size: download.length, digest, browser_download_url: `${base}/release/download/${name}` });
+  return {
+    tag_name: `v${version}`,
+    html_url: 'https://github.com/Houdini99/HoudiniDeck/releases',
+    published_at: new Date().toISOString(),
+    body: "## What's Changed\n* A made-up release from the mock OBS, for trying the update notice.\n* A source checkout only shows how to update; it installs nothing.",
+    assets: [asset('HoudiniDeck-x86_64.AppImage'), asset(`HoudiniDeck-Setup-${version}.exe`)],
+  };
+}
+
 if (import.meta.main) {
   const port = Number(process.env.MOCK_OBS_PORT ?? 4456);
   const controlPort = Number(process.env.MOCK_OBS_CONTROL_PORT ?? port + 1);
@@ -648,8 +668,13 @@ if (import.meta.main) {
       return 'Mock OBS started again (fresh state)';
     }));
   const report = (message: string) => (console.log(message), message);
+  const download = Buffer.alloc(2 * 1024 * 1024, 7);
   // Windows has no SIGUSR2, so the toggle is also a URL (on this PC only).
   createServer((req, res) => {
+    if (req.url === '/release') {
+      return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(fakeRelease(`http://127.0.0.1:${controlPort}`, download)));
+    }
+    if (req.url?.startsWith('/release/download/')) return void res.writeHead(200, { 'content-length': download.length }).end(download);
     if (req.url !== '/toggle') return void res.writeHead(404).end('Try /toggle\n');
     void toggle().then((message) => res.end(`${report(message)}\n`));
   }).listen(controlPort, '127.0.0.1');

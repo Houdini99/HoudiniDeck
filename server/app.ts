@@ -29,6 +29,8 @@ import { SoundPlayer, programSoundBackend, windowsSoundBackend } from './system/
 import { StatsWatcher } from './system/stats.ts';
 import { WinHelper } from './system/windows/helper.ts';
 import { WindowsMediaWatcher } from './system/windows/media.ts';
+import type { Relaunch } from './update/install.ts';
+import { Updater } from './update/updater.ts';
 
 export interface App {
   http: FastifyInstance;
@@ -41,6 +43,7 @@ export interface App {
   states: ButtonStates;
   sounds: SoundPlayer;
   thumbnails: SceneThumbnails;
+  updater: Updater;
   deckStore: DeckStore;
   settingsStore: SettingsStore;
   /** Port actually bound (useful when env.port is 0). */
@@ -58,7 +61,12 @@ async function readBuildId(webDist: string): Promise<string> {
   }
 }
 
-export async function startApp(env: Env): Promise<App> {
+export interface StartOptions {
+  /** Close the deck and start the new version in its place (index.ts does that; tests pass a fake). */
+  relaunch?: (next: Relaunch) => void;
+}
+
+export async function startApp(env: Env, options: StartOptions = {}): Promise<App> {
   const log = createLogger('server');
   const settingsStore = await SettingsStore.load(env.dataDir, log);
   const deckStore = await DeckStore.load(env.dataDir, log);
@@ -118,6 +126,17 @@ export async function startApp(env: Env): Promise<App> {
   });
   const version = packageVersion();
   const thumbnails = new SceneThumbnails({ obs: bridge, log: createLogger('thumbnails') });
+  const updater = new Updater({
+    version,
+    packaging: env.packaging,
+    appImagePath: env.appImagePath,
+    feed: env.updateFeed,
+    dataDir: env.dataDir,
+    autoCheck: () => settingsStore.settings.checkUpdates,
+    relaunch: options.relaunch ?? (() => log.warn('The update is installed; restart the deck to use it')),
+    beforeInstall: () => states.flush(),
+    log: createLogger('update'),
+  });
   const hub = new Hub({
     env,
     deckStore,
@@ -128,6 +147,7 @@ export async function startApp(env: Env): Promise<App> {
     audio,
     stats,
     thumbnails,
+    updater,
     kdeShortcuts: async () => (process.platform === 'linux' ? listKdeShortcuts(runProcess) : []),
     dispatcher,
     buildId: await readBuildId(env.webDist),
@@ -137,6 +157,7 @@ export async function startApp(env: Env): Promise<App> {
       urls: reachableUrls(env.publicPort),
       commands: settingsStore.settings.commands,
       platform: process.platform,
+      update: updater.info,
     }),
     log: createLogger('hub'),
   });
@@ -147,6 +168,7 @@ export async function startApp(env: Env): Promise<App> {
     media,
     settingsStore,
     dispatcher,
+    version,
     getDeck: () => deckStore.deck,
     labelCtx: () => ({ obs: bridge.state, deck: deckStore.deck, ext: ext.state }),
     log,
@@ -155,6 +177,7 @@ export async function startApp(env: Env): Promise<App> {
   const address = http.server.address();
   const port = typeof address === 'object' && address ? address.port : env.port;
   bridge.start();
+  updater.start();
 
   return {
     http,
@@ -167,10 +190,12 @@ export async function startApp(env: Env): Promise<App> {
     states,
     sounds,
     thumbnails,
+    updater,
     deckStore,
     settingsStore,
     port,
     async close() {
+      updater.stop();
       hub.close();
       media.stop();
       audio.stop();

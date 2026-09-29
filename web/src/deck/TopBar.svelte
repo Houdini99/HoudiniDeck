@@ -15,6 +15,13 @@
   const live = $derived(obs.stream.state === 'started' || obs.stream.state === 'reconnecting');
   const recording = $derived(obs.record.state === 'started');
   const dropped = $derived(obs.stats && obs.stats.outputTotal > 0 ? (obs.stats.outputSkipped / obs.stats.outputTotal) * 100 : 0);
+  const update = $derived(store.info?.update);
+  const updateLabel = $derived.by(() => {
+    if (update?.state === 'downloading') return `Downloading ${Math.floor((update.progress ?? 0) * 100)}%`;
+    if (update?.state === 'installing') return 'Installing…';
+    if (update?.state === 'restarting') return 'Restarting…';
+    return `Update ${update?.available?.version ?? ''}`.trim();
+  });
 </script>
 
 <header class="topbar">
@@ -50,6 +57,11 @@
       <span class="stats" title="OBS CPU usage, frame rate and dropped frames">
         CPU {obs.stats.cpu.toFixed(0)}% · {obs.stats.fps.toFixed(0)} fps{#if dropped >= 0.1}&nbsp;· {dropped.toFixed(1)}% dropped{/if}
       </span>
+    {/if}
+    {#if store.updateNotice}
+      <button class="pill update" onclick={() => (store.updateOpen = true)} title="A new version of HoudiniDeck" aria-label={updateLabel}>
+        <UiIcon name={store.updating ? 'progress-download' : 'arrow-up-circle'} size={16} /><span class="update-text">{updateLabel}</span>
+      </button>
     {/if}
     <button class="pill obs {obs.connection}" onclick={() => (store.settingsOpen = true)} title={obs.error ?? `OBS ${obs.version?.obs ?? ''}`}>
       <span class="dot"></span>{obsLabel}
@@ -178,6 +190,10 @@
     background: #f0a020;
     color: #1f1500;
   }
+  .pill.update {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
   .dot {
     width: 8px;
     height: 8px;
@@ -233,6 +249,9 @@
       flex: 1;
     }
     .fs {
+      display: none;
+    }
+    .update-text {
       display: none;
     }
   }

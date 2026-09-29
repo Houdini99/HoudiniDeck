@@ -1,6 +1,6 @@
 # Roadmap
 
-Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work. The deck also runs on Windows 10/11 (see "Windows support" below). Phase 4 added what other stream decks have (soundboard, timers, counters, toggles, Type Text, live scene pictures, an HTTP API, undo, …); see "Phase 4" below.
+Where the project stands and what comes next. Phase 1 (OBS control) and Phase 2 (deck UX) were built and tested on 2026‑09‑25, and so was Phase 3, except Discord; see the README for what exists. Ticked Phase 3 items keep notes on how they work. The deck also runs on Windows 10/11 (see "Windows support" below). Phase 4 added what other stream decks have (soundboard, timers, counters, toggles, Type Text, live scene pictures, an HTTP API, undo, …); see "Phase 4" below. The Windows installer and the AppImage update themselves from GitHub releases (see "Updates" below).
 
 ## 0. Before anything new: verify on the real PC
 
@@ -51,6 +51,10 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - The autostart entry from the README (`~/.config/autostart/houdinideck.desktop`), and that Run Command and Open Website work from it.
   - On one other distribution (e.g. Ubuntu or Fedora in a VM), since it's built for glibc 2.28+.
 
+- [ ] **Check the self-update on the real PCs** (see "Updates" below; CI and a local AppImage run passed). It needs two releases with the updater, so the first real check is going from the first version with it to the next one. Until then, `STREAMDECK_UPDATE_FEED` and `.github/update-test.mjs` show the flow with a made-up release.
+  - **AppImage:** from a deck started by double-click in Dolphin (FUSE, not extract-and-run): the Update button in the top bar, progress, restart; that the browser tab reconnects and reloads (new UI), the autostart entry still works, and a phone shows the "update from the PC" hint.
+  - **Windows 11:** the UAC prompt appears on the PC once, the progress window of the installer, and the deck comes back minimized with the options kept (firewall rule, autostart). Also **No** at the UAC prompt: the deck keeps running and says the update was cancelled.
+
 ## Windows support (2026‑09‑25)
 
 Everything but KDE shortcuts works on Windows 10/11. Where Linux runs a program, Windows goes through **one helper**: `server/system/windows/helper.ps1`, a long-running Windows PowerShell 5.1 process that `helper.ts` (`WinHelper`) starts when first needed and again after it stops.
@@ -80,6 +84,26 @@ Every published release also gets `HoudiniDeck-x86_64.AppImage`, so Linux users 
   - `--no-browser` is for autostart. `--stop` sends SIGTERM to `/usr/lib/houdinideck/server/index.ts` (any AppImage's, not a source checkout's) and waits up to 32 s, since the server waits for connected browsers. `--data` opens the data folder.
 - **CI:** `.github/workflows/linux-appimage.yml` runs only for published releases (or by hand). It builds the AppImage, runs `node .github/smoke.mjs --appimage <file>` (with `APPIMAGE_EXTRACT_AND_RUN=1`, since runners may lack FUSE), and attaches it to the release.
 - **Without FUSE,** `--appimage-extract-and-run` unpacks it into `/tmp/appimage_extracted_<md5>` (about 170 MB) and the runtime keeps that for the next start.
+
+## Updates (2026‑09‑29)
+
+Every device hears about a new release; the PC's own browser can install it with one click. Built on the branch `feature/update-system`.
+
+- **Which copy is this:** the launchers say so. `AppRun` exports `STREAMDECK_PACKAGE=appimage` (the AppImage runtime sets `APPIMAGE`, the file to replace), `HoudiniDeck.cmd` sets `STREAMDECK_PACKAGE=windows-installer`. Anything else is `source`, which only shows the notice and the `git pull` steps. `Env.packaging`, `Env.appImagePath`.
+- **Checking** (`server/update/updater.ts`, `Updater`):
+  - `GET https://api.github.com/repos/Houdini99/HoudiniDeck/releases/latest` (drafts and pre-releases never show up there), with the ETag (GitHub doesn't count "not modified" answers against its 60 requests an hour) and a 15 s timeout; the answer is checked with zod.
+  - 30 s after start-up, then every 12 h, while `settings.checkUpdates` (Settings, default on). After a failed check, or while the new release's download isn't attached yet (CI takes minutes), again after 30 min. **Check now** works any time.
+  - A newer `x.y.z` tag is `available`; it's `installable` once this copy's file (`HoudiniDeck-x86_64.AppImage` or `HoudiniDeck-Setup-<version>.exe`) is attached with a `sha256:` digest. Release notes are kept as plain text (at most 4000 characters).
+  - `STREAMDECK_UPDATE_CHECK=0` turns checks off entirely (`Env.updateFeed` is then undefined; tests do this so they never reach GitHub). `STREAMDECK_UPDATE_FEED` points somewhere else: the mock OBS serves a made-up release at `http://127.0.0.1:4457/release`.
+- **State for the browsers:** `ServerInfo.update` (`UpdateInfo`: packaging, available, state `idle|checking|downloading|installing|restarting`, progress, error, checkedAt, checks `on|off|env-off`). Changes go out as `{ t: 'info' }` (progress at most every 250 ms). `init.local` tells a browser whether it runs on the PC itself.
+- **Messages:** `{ t: 'update', action: 'check'|'install' }` and `{ t: 'settings.updates', check }`. `install` is refused unless the browser is trusted-local (like `settings.commands`); anyone may check or switch the automatic checks.
+- **Installing** (`server/update/install.ts`):
+  - `downloadVerified()` streams the file while hashing it, and checks its size (at most 300 MB) and SHA-256. On any failure the file is deleted, so nothing is ever half-replaced.
+  - **AppImage:** downloads to `.HoudiniDeck-update.part` next to `$APPIMAGE` (the same file system), `chmod 0755`, renames it over the running AppImage (which keeps its open file), then `relaunch`: `index.ts` closes the deck (browsers get close code 1012) and starts the new AppImage with `--no-browser`, detached, without `APPIMAGE`, `APPDIR`, `ARGV0`, `OWD` and `STREAMDECK_OPEN_BROWSER`.
+  - **Windows:** downloads to `<data>\updates\HoudiniDeck-Setup-<version>.exe` (Node adds no Mark-of-the-Web, so no SmartScreen), saves the button states, and starts it detached with `/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /STARTDECK /LOG=<data>\updates\install.log`. Inno Setup's loader asks for elevation itself (should Windows refuse to start it with `EACCES`, it goes through `Start-Process` instead). `PrepareToInstall` stops the deck as for any update, and a `[Run]` entry with `Check: HasParam('/STARTDECK')` starts it again as the logged-in user (minimized). An installer that ends while the deck still runs (UAC declined: a non-zero exit code) turns into an error in the dialog.
+  - At start-up, leftover installers in `updates\` and a stale `.part` next to the AppImage are deleted.
+- **UI:** a blue **Update x.y.z** pill in the top bar (progress while it runs; in compact mode a dot on ⋯), `web/src/update/UpdateDialog.svelte` (notes, link, Update now / the "open it on the PC" hint / the source steps / "not attached yet"), and **Settings → Updates** (status, Check now, the automatic-check switch). **Not now** hides the pill on that device until the next version (`prefs.skippedUpdate`). While the deck restarts, the banner and splash say "Updating HoudiniDeck…"; a new `buildId` reloads the page as before. Updating while OBS streams or records asks first.
+- **Tests:** `tests/update.test.ts` (fake GitHub and fake installer: versions, checks, ETag, errors, downloads against a local HTTP server, replacing an AppImage, the Windows installer's arguments and a cancelled one, clean-up, `readEnv`), plus a case in `server.test.ts` (who may install, `init.local`, broadcasts). `.github/update-test.mjs` serves a made-up v99.0.0 whose download is the real file, and makes a real deck install it: after the AppImage smoke test in `linux-appimage.yml`, and in `.github/test-installer.ps1` on the Windows runner (whose UAC is off).
 
 ## Phase 3: actions beyond OBS
 

@@ -1,6 +1,6 @@
 # CI: tries the built Windows installer on the runner. Installs it silently with every option, runs the
-# deck the way the shortcuts do (against the mock OBS), updates over the running deck, then uninstalls
-# it and checks that everything is gone.
+# deck the way the shortcuts do (against the mock OBS), updates over the running deck, lets the deck
+# update itself (update-test.mjs), then uninstalls it and checks that everything is gone.
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -54,9 +54,10 @@ Assert (Test-Path $startup) 'autostart shortcut'
 Assert ((Get-FirewallRuleCount) -eq 1) 'firewall rule'
 Assert ($null -ne (Get-ItemProperty $uninstallKey -ErrorAction SilentlyContinue)) 'listed in Apps'
 
-# Run it the way the shortcuts do; the .env in the data folder points it at the mock OBS.
+# Run it the way the shortcuts do; the .env in the data folder points it at the mock OBS, and at the
+# made-up release update-test.mjs serves.
 New-Item -ItemType Directory -Force $data | Out-Null
-Set-Content (Join-Path $data '.env') "PORT=3398`nOBS_URL=ws://127.0.0.1:4456`nOBS_PASSWORD="
+Set-Content (Join-Path $data '.env') "PORT=3398`nOBS_URL=ws://127.0.0.1:4456`nOBS_PASSWORD=`nSTREAMDECK_UPDATE_FEED=http://127.0.0.1:3390/latest"
 $mock = Start-Process node -ArgumentList 'server/dev/mock-obs.ts' -WorkingDirectory $root -WindowStyle Hidden -PassThru
 try {
   Start-Deck
@@ -71,6 +72,14 @@ try {
 
   Start-Deck
   Wait-Until { Get-Health } 'the updated deck to start'
+
+  Write-Host 'Letting the deck update itself (Update now, from the PC)'
+  & node (Join-Path $root '.github\update-test.mjs') --installer $setup.FullName --port 3398
+  $updated = $LASTEXITCODE -eq 0
+  if (-not $updated -and (Test-Path "$data\updates\install.log")) { Get-Content "$data\updates\install.log" }
+  Assert $updated 'the deck downloads the installer, runs it silently, and is started again by it'
+  Assert (Test-Path "$data\updates\install.log") 'the installer wrote its log into the data folder'
+  Assert (Test-Path "$data\deck.json") 'the self-update keeps the deck'
   Write-Host 'Uninstalling (with /PURGEDATA)'
   & "$app\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /PURGEDATA
   # The uninstaller hands over to a copy of itself and returns at once, so wait for the folder to go.

@@ -337,6 +337,8 @@ export const SettingsSchema = z.object({
   accessKey: z.string().min(16),
   /** Run Command buttons work. Only the PC's own browser can turn this on or off (Settings). */
   commands: z.boolean().default(false),
+  /** Ask GitHub now and then whether a newer version is out. */
+  checkUpdates: z.boolean().default(true),
 });
 
 // ---- client → server messages -------------------------------------------------------------
@@ -381,6 +383,10 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   /** Allow or forbid Run Command buttons (refused unless it comes from the PC's own browser). */
   z.object({ t: z.literal('settings.commands'), reqId: ReqId, enabled: z.boolean() }),
+  /** Automatic update checks on or off. */
+  z.object({ t: z.literal('settings.updates'), reqId: ReqId, check: z.boolean() }),
+  /** Look for a new version now, or install the one found (only from the PC's own browser). */
+  z.object({ t: z.literal('update'), reqId: ReqId, action: z.enum(['check', 'install']) }),
   z.object({ t: z.literal('meters'), inputs: z.array(z.string().max(200)).max(64) }),
   /** The stats tiles this browser shows (polled only while someone looks at them). */
   z.object({ t: z.literal('stats'), metrics: z.array(z.enum(STAT_METRICS)).max(STAT_METRICS.length) }),

@@ -17,7 +17,19 @@
 
   const obs = $derived(store.obs!);
   const deck = $derived(store.deck!);
+  const update = $derived(store.info?.update);
   const vibrates = typeof navigator.vibrate === 'function';
+  let checkingUpdates = $state(false);
+  let updateMessage = $state('');
+
+  /** "just now", "5 minutes ago", "3 hours ago" */
+  function ago(time: number): string {
+    const minutes = Math.floor((store.now - time) / 60_000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
 
   onMount(async () => {
     try {
@@ -72,6 +84,33 @@
       input.checked = !enabled;
       store.toast((err as Error).message, 'error');
     }
+  }
+
+  async function checkUpdates(): Promise<void> {
+    checkingUpdates = true;
+    updateMessage = '';
+    try {
+      await store.request({ t: 'update', action: 'check' });
+    } catch (err) {
+      updateMessage = (err as Error).message;
+    } finally {
+      checkingUpdates = false;
+    }
+  }
+
+  async function setUpdateChecks(e: Event & { currentTarget: HTMLInputElement }): Promise<void> {
+    const input = e.currentTarget;
+    try {
+      await store.request({ t: 'settings.updates', check: input.checked });
+    } catch (err) {
+      input.checked = !input.checked;
+      store.toast((err as Error).message, 'error');
+    }
+  }
+
+  function showUpdate(): void {
+    close();
+    store.updateOpen = true;
   }
 
   async function copyLink(input: HTMLInputElement): Promise<void> {
@@ -274,6 +313,39 @@
         <p class="hint">The server also keeps automatic backups in data/backups/.</p>
       </section>
 
+      {#if update}
+        <section class="group">
+          <h3 class="section-title">Updates</h3>
+          {#if update.available}
+            <p class="update-status"><UiIcon name="arrow-up-circle" size={18} /> HoudiniDeck {update.available.version} is available (this deck runs {store.info?.version}).</p>
+          {:else}
+            <p class="hint">
+              HoudiniDeck {store.info?.version}{update.checkedAt && !update.error ? ` is the newest version (checked ${ago(update.checkedAt)})` : ''}.
+            </p>
+          {/if}
+          {#if update.error}<p class="error">{update.error}</p>{/if}
+          {#if updateMessage}<p class="error">{updateMessage}</p>{/if}
+          <div class="row">
+            {#if update.available || store.updating}
+              <button class="btn primary" onclick={showUpdate}>{store.updating ? 'Show progress' : 'See what’s new'}</button>
+            {/if}
+            <button class="btn" disabled={checkingUpdates || update.checks === 'env-off'} onclick={checkUpdates}>
+              <UiIcon name="refresh" size={18} />{checkingUpdates ? 'Checking…' : 'Check now'}
+            </button>
+          </div>
+          <label class="toggle">
+            <span>
+              Check for updates automatically
+              <small>Asks GitHub twice a day whether a newer version is out (GitHub sees this PC’s internet address). Nothing is installed without asking.</small>
+            </span>
+            <input type="checkbox" checked={update.checks === 'on'} disabled={update.checks === 'env-off'} onchange={setUpdateChecks} />
+          </label>
+          {#if update.checks === 'env-off'}
+            <p class="hint">Update checks are turned off on the server (STREAMDECK_UPDATE_CHECK=0).</p>
+          {/if}
+        </section>
+      {/if}
+
       <section class="group about">
         <h3 class="section-title">About</h3>
         <p class="hint">
@@ -347,5 +419,11 @@
   }
   .about p {
     overflow-wrap: anywhere;
+  }
+  .update-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
   }
 </style>

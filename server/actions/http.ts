@@ -29,7 +29,7 @@ function looksLikeJson(body: string): boolean {
 }
 
 /** Why fetch failed, in words for the toast. */
-function failure(err: unknown, url: URL, timeoutMs: number): string {
+export function fetchFailure(err: unknown, url: URL, timeoutMs: number): string {
   if ((err as Error)?.name === 'TimeoutError') return `no answer within ${timeoutMs / 1000} s`;
   const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
   const code = cause?.code ?? '';
@@ -69,7 +69,7 @@ export async function sendRequest(action: ActionOf<'http.request'>, log: Logger)
     // Redirects are followed, but fetch only ever follows them to http(s) URLs.
     res = await fetch(url, { method: action.method, headers, body, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
-    const why = failure(err, url, timeoutMs);
+    const why = fetchFailure(err, url, timeoutMs);
     log.debug(`Webhook ${action.method} ${url.host} failed: ${why}`);
     throw new ActionError(`Webhook to ${url.host} failed: ${why}`);
   }

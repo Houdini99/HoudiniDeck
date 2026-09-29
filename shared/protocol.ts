@@ -17,6 +17,36 @@ export interface ServerInfo {
   commands: boolean;
   /** The server's operating system (Node's process.platform: 'linux', 'win32', …); some actions only work on some. */
   platform: string;
+  update: UpdateInfo;
+}
+
+/** How this copy was installed: the AppImage and the Windows installer update themselves, a source checkout doesn't. */
+export type Packaging = 'appimage' | 'windows-installer' | 'source';
+
+/** A release on GitHub that is newer than the running version. */
+export interface AvailableUpdate {
+  version: string;
+  /** The release's page on GitHub. */
+  pageUrl: string;
+  /** Its release notes, as plain text (shortened). */
+  notes: string;
+  publishedAt?: string;
+  /** Its download for this copy is attached (CI adds them a few minutes after the release is published). */
+  installable: boolean;
+}
+
+export interface UpdateInfo {
+  packaging: Packaging;
+  available?: AvailableUpdate;
+  state: 'idle' | 'checking' | 'downloading' | 'installing' | 'restarting';
+  /** How much of the download is done (0–1), while downloading. */
+  progress?: number;
+  /** Why the last check or update failed. */
+  error?: string;
+  /** When GitHub was last asked (ms since 1970). */
+  checkedAt?: number;
+  /** Automatic checks: turned on or off in Settings, or off on the server (STREAMDECK_UPDATE_CHECK=0). */
+  checks: 'on' | 'off' | 'env-off';
 }
 
 export interface PairingInfo {
@@ -56,9 +86,10 @@ export interface KdeComponent {
 export type ServerMsg =
   | { t: 'hello'; protocol: number; needsAuth: boolean }
   | { t: 'authError'; reason: 'bad-key' | 'key-rotated' | 'timeout' }
-  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; history: HistoryInfo; obs: ObsState; ext: ExtState; info: ServerInfo }
+  /** `local`: this browser runs on the PC itself (it may install updates and turn Run Command buttons on or off). */
+  | { t: 'init'; buildId: string; serverTime: number; deck: Deck; history: HistoryInfo; obs: ObsState; ext: ExtState; info: ServerInfo; local: boolean }
   | { t: 'deck'; deck: Deck; history: HistoryInfo }
-  /** The server info changed (e.g. Run Command buttons were turned on or off). */
+  /** The server info changed (e.g. Run Command buttons were turned on or off, or an update was found). */
   | { t: 'info'; info: ServerInfo }
   | { t: 'obs'; obs: ObsState; serverTime: number }
   | { t: 'ext'; ext: ExtState }

@@ -10,7 +10,7 @@ import { startApp, type App } from '../server/app.ts';
 import { startMockObs, type MockObs } from '../server/dev/mock-obs.ts';
 import { readEnv } from '../server/env.ts';
 import { deckRunningOn } from '../server/network.ts';
-import type { ServerMsg, SettingsView } from '../shared/protocol.ts';
+import type { ServerMsg, SettingsView, UpdateInfo } from '../shared/protocol.ts';
 import { tempDir, waitFor } from './helpers.ts';
 
 let mock: MockObs;
@@ -21,7 +21,7 @@ before(async () => {
   mock = await startMockObs({ outputDelayMs: 20 });
   const tmp = await tempDir();
   cleanup = tmp.cleanup;
-  app = await startApp({ ...readEnv({}), host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: mock.url, obsPassword: '' });
+  app = await startApp({ ...readEnv({ STREAMDECK_UPDATE_CHECK: '0' }), host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: mock.url, obsPassword: '' });
   await waitFor(() => app.bridge.connected, 3000, 'OBS connection');
 });
 
@@ -32,10 +32,10 @@ after(async () => {
 });
 
 /** A WebSocket client that records every message; `host` fakes where the browser thinks it is. */
-function connect(host?: string, origin?: string) {
+function connect(host?: string, origin?: string, port = app.port) {
   const messages: ServerMsg[] = [];
   const headers = host ? { Host: host } : undefined;
-  const ws = new WebSocket(`ws://127.0.0.1:${app.port}/ws`, { headers, origin: origin ?? (host ? `http://${host}` : undefined) });
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers, origin: origin ?? (host ? `http://${host}` : undefined) });
   ws.on('message', (raw) => messages.push(JSON.parse(raw.toString())));
   const next = <T extends ServerMsg['t']>(t: T, from = 0) =>
     waitFor(() => messages.slice(from).find((m): m is Extract<ServerMsg, { t: T }> => m.t === t), 3000, `"${t}" message`);
@@ -216,12 +216,76 @@ test('icons and health endpoints', async () => {
   assert.equal((await app.http.inject({ method: 'GET', url: '/icons/evil/../x.svg' })).statusCode, 404);
   const health = await app.http.inject({ method: 'GET', url: '/api/health' });
   assert.equal(health.json().obs, 'connected');
+  assert.match(health.json().version, /^\d+\.\d+\.\d+$/);
+});
+
+test('updates: every browser hears about a new version, only the PC itself may install it', async () => {
+  // This app never asks GitHub (the tests turn checks off) …
+  const c = connect(`localhost:${app.port}`);
+  const init = await c.next('init');
+  assert.equal(init.local, true);
+  assert.equal(init.info.update.checks, 'env-off');
+  const off = await c.request({ t: 'update', action: 'check' });
+  assert.match(off.ok ? '' : off.error, /turned off on the server/);
+  c.ws.close();
+
+  // … so a second one asks a fake GitHub that has a newer release (whose download isn't attached yet).
+  const github = createServer((_req, res) =>
+    res.writeHead(200, { 'content-type': 'application/json' }).end(
+      JSON.stringify({
+        tag_name: 'v99.0.0',
+        html_url: 'https://github.com/Houdini99/HoudiniDeck/releases/tag/v99.0.0',
+        body: 'Lots of new things',
+        published_at: '2026-10-01T12:00:00Z',
+        assets: [],
+      }),
+    ),
+  ).listen(0, '127.0.0.1');
+  await new Promise((resolve) => github.once('listening', resolve));
+  const feed = `http://127.0.0.1:${(github.address() as AddressInfo).port}/latest`;
+  const tmp = await tempDir();
+  const env = readEnv({ STREAMDECK_UPDATE_FEED: feed, STREAMDECK_PACKAGE: 'windows-installer' });
+  const second = await startApp({ ...env, host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: mock.url, obsPassword: '' });
+  try {
+    const pc = connect(`localhost:${second.port}`, undefined, second.port);
+    const pcInit = await pc.next('init');
+    assert.equal(pcInit.info.update.packaging, 'windows-installer');
+    assert.equal(pcInit.info.update.checks, 'on');
+
+    const phone = connect('192.168.1.20:3325', undefined, second.port);
+    await phone.next('hello');
+    phone.ws.send(JSON.stringify({ t: 'auth', key: second.settingsStore.settings.accessKey }));
+    assert.equal((await phone.next('init')).local, false);
+
+    const found = await phone.request({ t: 'update', action: 'check' });
+    assert.ok(found.ok);
+    const info = found.data as UpdateInfo;
+    assert.equal(info.available?.version, '99.0.0');
+    assert.equal(info.available?.installable, false);
+    await waitFor(() => pc.messages.some((m) => m.t === 'info' && m.info.update.available?.version === '99.0.0'), 3000, 'the news on the PC');
+
+    const refused = await phone.request({ t: 'update', action: 'install' });
+    assert.match(refused.ok ? '' : refused.error, /only be installed in the browser on the PC itself/);
+    const notYet = await pc.request({ t: 'update', action: 'install' });
+    assert.match(notYet.ok ? '' : notYet.error, /isn't ready yet/);
+
+    const turnedOff = await phone.request({ t: 'settings.updates', check: false });
+    assert.ok(turnedOff.ok);
+    assert.equal(second.settingsStore.settings.checkUpdates, false);
+    await waitFor(() => pc.messages.some((m) => m.t === 'info' && m.info.update.checks === 'off'), 3000, 'checks off for everyone');
+    pc.ws.close();
+    phone.ws.close();
+  } finally {
+    await second.close();
+    github.close();
+    await tmp.cleanup();
+  }
 });
 
 test('changing the OBS address without a password drops the saved one', async () => {
   // This app's OBS connection comes from env vars, so exercise the rule on a second instance.
   const tmp = await tempDir();
-  const second = await startApp({ ...readEnv({}), host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: undefined, obsPassword: undefined });
+  const second = await startApp({ ...readEnv({ STREAMDECK_UPDATE_CHECK: '0' }), host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: undefined, obsPassword: undefined });
   try {
     await second.settingsStore.update((s) => {
       s.obs.url = mock.url;

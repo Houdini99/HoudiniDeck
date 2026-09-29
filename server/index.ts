@@ -1,9 +1,11 @@
+import { spawn } from 'node:child_process';
 import QRCode from 'qrcode';
-import { startApp } from './app.ts';
+import { startApp, type App } from './app.ts';
 import { readEnv } from './env.ts';
 import { createLogger, errorMessage } from './log.ts';
 import { deckRunningOn, openInBrowser, pairingUrl, reachableUrls } from './network.ts';
 import { desktopSessionWarning } from './system/command.ts';
+import type { Relaunch } from './update/install.ts';
 
 const env = readEnv();
 const log = createLogger('server');
@@ -35,10 +37,34 @@ async function printBanner(key: string, obsUrl: string, commands: boolean): Prom
   );
 }
 
+/** Start the new version (after an update) on its own, not as a child of this process. */
+function launchDetached(next: Relaunch): Promise<void> {
+  return new Promise((resolve) => {
+    log.info(`Starting ${next.command} ${next.args.join(' ')}`);
+    spawn(next.command, next.args, { detached: true, stdio: 'ignore', env: next.env })
+      .once('spawn', resolve)
+      .once('error', (err) => {
+        log.error(`Couldn't start ${next.command}: ${errorMessage(err)}. Start it by hand.`);
+        resolve();
+      })
+      .unref();
+  });
+}
+
 async function main(): Promise<void> {
-  let app;
+  let app: App | undefined;
+  let stopping = false;
+  /** Close the deck (it tells connected browsers first); after an update, start the new version in its place. */
+  const shutdown = async (reason: string, next?: Relaunch) => {
+    if (stopping || !app) return;
+    stopping = true;
+    log.info(`${reason}, shutting down`);
+    await app.close();
+    if (next) await launchDetached(next);
+    process.exit(0);
+  };
   try {
-    app = await startApp(env);
+    app = await startApp(env, { relaunch: (next) => void shutdown('Updated', next) });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EADDRINUSE') {
@@ -71,18 +97,10 @@ async function main(): Promise<void> {
   }
   if (env.openBrowser) openInBrowser(`http://localhost:${env.publicPort}`);
 
-  let stopping = false;
-  const shutdown = async (signal: string) => {
-    if (stopping) return;
-    stopping = true;
-    log.info(`${signal} received, shutting down`);
-    await app.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT received'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM received'));
   // Closing the terminal window (on Windows, the console window).
-  process.on('SIGHUP', () => void shutdown('SIGHUP'));
+  process.on('SIGHUP', () => void shutdown('SIGHUP received'));
 }
 
 main().catch((err) => {

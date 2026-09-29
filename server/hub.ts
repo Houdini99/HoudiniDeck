@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
 import type { StatMetric } from '../shared/ext-types.ts';
-import { CLOSE, PROTOCOL_VERSION, type KdeComponent, type ServerInfo, type ServerMsg, type SettingsView } from '../shared/protocol.ts';
+import { CLOSE, PROTOCOL_VERSION, type KdeComponent, type ServerInfo, type ServerMsg, type SettingsView, type UpdateInfo } from '../shared/protocol.ts';
 import { ClientMsgSchema, DeckSchema, type DeckOp } from '../shared/schema.ts';
 import type { Dispatcher } from './actions/dispatch.ts';
 import { ActionError } from './actions/executor.ts';
@@ -24,6 +24,7 @@ import type { AudioWatcher } from './system/audio.ts';
 import { desktopSessionWarning } from './system/command.ts';
 import type { MediaSource } from './system/media.ts';
 import type { StatsWatcher } from './system/stats.ts';
+import type { Updater } from './update/updater.ts';
 
 const AUTH_TIMEOUT_MS = 10_000;
 const PING_INTERVAL_MS = 15_000;
@@ -54,6 +55,7 @@ export interface HubDeps {
   audio: AudioWatcher;
   stats: StatsWatcher;
   thumbnails: SceneThumbnails;
+  updater: Updater;
   /** Lists KDE's global shortcuts for the editor. */
   kdeShortcuts: () => Promise<KdeComponent[]>;
   dispatcher: Dispatcher;
@@ -80,6 +82,7 @@ export class Hub {
     deps.bridge.on('meters', (levels) => this.sendMeters(levels));
     deps.ext.on('change', () => this.scheduleExtBroadcast());
     deps.thumbnails.on('images', (changed) => this.sendThumbs(changed));
+    deps.updater.on('change', () => this.infoChanged());
     this.pingTimer = setInterval(() => this.pingAll(), PING_INTERVAL_MS);
   }
 
@@ -147,6 +150,7 @@ export class Hub {
       obs: bridge.state,
       ext: ext.state,
       info: info(),
+      local: client.trustedLocal,
     });
     this.updateInterest();
   }
@@ -199,6 +203,10 @@ export class Hub {
         return this.reply(client, msg.reqId, () => this.setObs(client, msg.url, msg.password));
       case 'settings.commands':
         return this.reply(client, msg.reqId, () => this.setCommands(client, msg.enabled));
+      case 'settings.updates':
+        return this.reply(client, msg.reqId, () => this.setUpdateChecks(msg.check));
+      case 'update':
+        return this.reply(client, msg.reqId, () => this.update(client, msg.action));
       case 'meters':
         client.meters = new Set(msg.inputs);
         this.updateInterest();
@@ -335,7 +343,7 @@ export class Hub {
    * may turn them on (or off): a paired phone can't give itself that power.
    */
   private async setCommands(client: Client, enabled: boolean): Promise<SettingsView> {
-    const { settingsStore, log, info } = this.deps;
+    const { settingsStore, log } = this.deps;
     if (!client.trustedLocal) {
       throw new OpError('Run Command buttons can only be turned on or off in the browser on the PC itself (http://localhost).');
     }
@@ -345,9 +353,35 @@ export class Hub {
       else log.info('Run Command buttons turned off');
       const sessionWarning = enabled && desktopSessionWarning();
       if (sessionWarning) log.warn(sessionWarning);
-      this.broadcast({ t: 'info', info: info() });
+      this.infoChanged();
     }
     return this.settingsView(client);
+  }
+
+  private async setUpdateChecks(check: boolean): Promise<UpdateInfo> {
+    const { settingsStore, updater } = this.deps;
+    await settingsStore.update((s) => (s.checkUpdates = check));
+    updater.autoChanged();
+    return updater.info;
+  }
+
+  /**
+   * Anyone may look for a new version, but installing it replaces the program on the PC (and on Windows
+   * asks for administrator rights there), so only someone at the PC may start that.
+   */
+  private async update(client: Client, action: 'check' | 'install'): Promise<UpdateInfo> {
+    const { updater, env } = this.deps;
+    if (action === 'check') return updater.check();
+    if (!client.trustedLocal) {
+      throw new OpError(`Updates can only be installed in the browser on the PC itself (http://localhost:${env.publicPort}).`);
+    }
+    await updater.install();
+    return updater.info;
+  }
+
+  /** The server info changed (Run Command buttons, updates): every browser gets it again. */
+  infoChanged(): void {
+    this.broadcast({ t: 'info', info: this.deps.info() });
   }
 
   private send(client: Client, msg: ServerMsg): void {

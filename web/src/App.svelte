@@ -12,6 +12,7 @@
   import UiIcon from './lib/UiIcon.svelte';
   import Pairing from './pairing/Pairing.svelte';
   import Settings from './settings/Settings.svelte';
+  import UpdateDialog from './update/UpdateDialog.svelte';
 
   onMount(() => {
     store.start();
@@ -57,7 +58,9 @@
 {:else if !store.deck || !store.obs}
   <main class="splash">
     <UiIcon name="view-grid" size={40} />
-    <p>{store.conn === 'closed' ? 'Can’t reach the deck server. Retrying…' : 'Connecting…'}</p>
+    <p>
+      {#if store.updating}Updating HoudiniDeck… it’s back in a moment.{:else}{store.conn === 'closed' ? 'Can’t reach the deck server. Retrying…' : 'Connecting…'}{/if}
+    </p>
   </main>
 {:else}
   <DeckView />
@@ -68,6 +71,7 @@
   {/if}
   {#if store.pagesOpen}<PageManager />{/if}
   {#if store.settingsOpen}<Settings />{/if}
+  {#if store.updateOpen}<UpdateDialog />{/if}
   {#if !store.editMode}<IdleDim />{/if}
 {/if}
 <Toasts />
