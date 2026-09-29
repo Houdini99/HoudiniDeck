@@ -51,9 +51,12 @@ These need the user's PC and weren't possible where the code was built (a cloud 
   - The autostart entry from the README (`~/.config/autostart/houdinideck.desktop`), and that Run Command and Open Website work from it.
   - On one other distribution (e.g. Ubuntu or Fedora in a VM), since it's built for glibc 2.28+.
 
-- [ ] **Check the self-update on the real PCs** (see "Updates" below; CI and a local AppImage run passed). It needs two releases with the updater, so the first real check is going from the first version with it to the next one. Until then, `STREAMDECK_UPDATE_FEED` and `.github/update-test.mjs` show the flow with a made-up release.
-  - **AppImage:** from a deck started by double-click in Dolphin (FUSE, not extract-and-run): the Update button in the top bar, progress, restart; that the browser tab reconnects and reloads (new UI), the autostart entry still works, and a phone shows the "update from the PC" hint.
-  - **Windows 11:** the UAC prompt appears on the PC once, the progress window of the installer, and the deck comes back minimized with the options kept (firewall rule, autostart). Also **No** at the UAC prompt: the deck keeps running and says the update was cancelled.
+- [x] **The self-update on the real PCs:** updating from 0.4.0 to 0.4.1 worked on Windows and on Linux (AppImage) on 2026‑09‑29, the first real update through it (see "Updates" below).
+  - The AppImage's autostart entries kept working after it replaced itself.
+  - Windows showed **no UAC prompt**: the installer got administrator rights without asking. Either UAC is set to "Never notify" on that PC, or the deck itself ran elevated (Task Manager → Details → column "Elevated" for its `node.exe`), which would give every button administrator rights.
+  - A tablet showed the update and the "update from the PC" hint (Linux deck; phones can't reach the WinBoat VM the Windows tests ran in).
+  - With UAC back on, going from 0.4.0 to 0.4.1 again: **No** at the prompt makes Inno Setup's loader exit with code 2; the deck keeps running, the dialog shows an error, and Update now can be pressed again. Since then, code 2 says "The update was cancelled at Windows' permission prompt"; other codes say the update failed, with the code and `install.log`.
+- [ ] **Still to check:** **Yes** at the UAC prompt (the installer's progress window, the deck back minimized, the tab reloading as 0.4.1), and that the options are kept (`netsh advfirewall firewall show rule name=HoudiniDeck`, the autostart shortcut in `shell:startup`).
 
 ## Windows support (2026‑09‑25)
 
@@ -87,7 +90,7 @@ Every published release also gets `HoudiniDeck-x86_64.AppImage`, so Linux users 
 
 ## Updates (2026‑09‑29)
 
-Every device hears about a new release; the PC's own browser can install it with one click. Built on the branch `feature/update-system`.
+Every device hears about a new release; the PC's own browser can install it with one click. Released in 0.4.0; the first real update (0.4.0 → 0.4.1) worked on Windows and Linux.
 
 - **Which copy is this:** the launchers say so. `AppRun` exports `STREAMDECK_PACKAGE=appimage` (the AppImage runtime sets `APPIMAGE`, the file to replace), `HoudiniDeck.cmd` sets `STREAMDECK_PACKAGE=windows-installer`. Anything else is `source`, which only shows the notice and the `git pull` steps. `Env.packaging`, `Env.appImagePath`.
 - **Checking** (`server/update/updater.ts`, `Updater`):
@@ -100,20 +103,20 @@ Every device hears about a new release; the PC's own browser can install it with
 - **Installing** (`server/update/install.ts`):
   - `downloadVerified()` streams the file while hashing it, and checks its size (at most 300 MB) and SHA-256. On any failure the file is deleted, so nothing is ever half-replaced.
   - **AppImage:** downloads to `.HoudiniDeck-update.part` next to `$APPIMAGE` (the same file system), `chmod 0755`, renames it over the running AppImage (which keeps its open file), then `relaunch`: `index.ts` closes the deck (browsers get close code 1012) and starts the new AppImage with `--no-browser`, detached, without `APPIMAGE`, `APPDIR`, `ARGV0`, `OWD` and `STREAMDECK_OPEN_BROWSER`.
-  - **Windows:** downloads to `<data>\updates\HoudiniDeck-Setup-<version>.exe` (Node adds no Mark-of-the-Web, so no SmartScreen), saves the button states, and starts it detached with `/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /STARTDECK /LOG=<data>\updates\install.log`. Inno Setup's loader asks for elevation itself (should Windows refuse to start it with `EACCES`, it goes through `Start-Process` instead). `PrepareToInstall` stops the deck as for any update, and a `[Run]` entry with `Check: HasParam('/STARTDECK')` starts it again as the logged-in user (minimized). An installer that ends while the deck still runs (UAC declined: a non-zero exit code) turns into an error in the dialog.
+  - **Windows:** downloads to `<data>\updates\HoudiniDeck-Setup-<version>.exe` (Node adds no Mark-of-the-Web, so no SmartScreen), saves the button states, and starts it detached with `/SILENT /SUPPRESSMSGBOXES /NORESTART /SP- /STARTDECK /LOG=<data>\updates\install.log`. Inno Setup's loader asks for elevation itself (should Windows refuse to start it with `EACCES`, it goes through `Start-Process` instead). `PrepareToInstall` stops the deck as for any update, and a `[Run]` entry with `Check: HasParam('/STARTDECK')` starts it again as the logged-in user (minimized). An installer that ends while the deck still runs turns into an error in the dialog: exit code 2 (No at the UAC prompt, checked on Windows 11) says the update was cancelled; any other code says it failed and points to `install.log`.
   - At start-up, leftover installers in `updates\` and a stale `.part` next to the AppImage are deleted.
 - **UI:** a blue **Update x.y.z** pill in the top bar (progress while it runs; in compact mode a dot on ⋯), `web/src/update/UpdateDialog.svelte` (notes, link, Update now / the "open it on the PC" hint / the source steps / "not attached yet"), and **Settings → Updates** (status, Check now, the automatic-check switch). **Not now** hides the pill on that device until the next version (`prefs.skippedUpdate`). While the deck restarts, the banner and splash say "Updating HoudiniDeck…"; a new `buildId` reloads the page as before. Updating while OBS streams or records asks first.
 - **Tests:** `tests/update.test.ts` (fake GitHub and fake installer: versions, checks, ETag, errors, downloads against a local HTTP server, replacing an AppImage, the Windows installer's arguments and a cancelled one, clean-up, `readEnv`), plus a case in `server.test.ts` (who may install, `init.local`, broadcasts). `.github/update-test.mjs` serves a made-up v99.0.0 whose download is the real file, and makes a real deck install it: after the AppImage smoke test in `linux-appimage.yml`, and in `.github/test-installer.ps1` on the Windows runner (whose UAC is off).
 
 ## Stop button (0.4.1, 2026‑09‑29)
 
-**Settings → Stop HoudiniDeck** ends the deck, built on the branch `feature/stop-server`.
+**Settings → Stop HoudiniDeck** ends the deck. Released in 0.4.1.
 
 - `{ t: 'settings', action: 'stop' }`, refused unless the browser is trusted-local (a phone could stop the deck but not start it again). The hub broadcasts `{ t: 'stopped' }`, answers, and 100 ms later calls `stop`: `startApp`'s option, which `index.ts` points at the same `shutdown()` as SIGTERM (browsers get close code 1012, button states are saved, exit code 0). Without it (tests) it only logs.
 - Exit code 0 ends every launcher cleanly: the installer's console window closes (it only pauses on errors), the AppImage ends, and the systemd unit (`Restart=on-failure`) stays stopped.
 - The browsers keep `store.stopped` until the next `init`: the banner and splash say "HoudiniDeck was stopped on the PC" while the socket keeps retrying, so the page comes back by itself once the deck runs again. The Settings hint and the confirm say how to start it again, by `ServerInfo.update.packaging`.
 - **Test:** `server.test.ts` (a paired device is refused; the PC's stop reaches every browser and calls `stop` once). Checked in `dev:mock`: the server exits, the banner shows, and the page reconnects after `node --watch` restarts it.
-- [ ] **On the real PCs:** the installer's window closes on Windows, and a Dolphin-started AppImage ends (`pgrep -f houdinideck` finds nothing).
+- [x] **On the real PCs** (2026‑09‑29): stopping works on Windows (installer) and Linux (AppImage).
 
 ## Phase 3: actions beyond OBS
 

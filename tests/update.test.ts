@@ -298,22 +298,23 @@ test('a failed AppImage update leaves the old one alone and says why', { skip: p
   }
 });
 
-test('Windows: the installer runs silently and restarts the deck; a cancelled one is reported', async () => {
+test('Windows: the installer runs silently and restarts the deck; a cancelled or failed one is reported', async () => {
   const { dir, cleanup } = await tempDir();
   const github = fakeGitHub(() => json(release('0.5.0', [{ name: 'HoudiniDeck-Setup-0.5.0.exe' }])));
   const events: string[] = [];
   const runs: Array<{ setup: string; args: string[]; content: Buffer }> = [];
+  // First as if the user said No at Windows' permission prompt, then as if the installer failed.
+  const exitCodes = [2, 1];
   const { updater } = makeUpdater({
     fetch: github.fetch,
     packaging: 'windows-installer',
     appImagePath: undefined,
     dataDir: dir,
     beforeInstall: async () => void events.push('saved'),
-    // As if the user said No at Windows' permission prompt.
     runInstaller: async (setup, args) => {
       events.push('installer');
       runs.push({ setup, args, content: await readFile(setup) });
-      return 2;
+      return exitCodes.shift()!;
     },
   });
   try {
@@ -326,7 +327,11 @@ test('Windows: the installer runs silently and restarts the deck; a cancelled on
     assert.deepEqual(runs[0].content, NEW_FILE);
     assert.deepEqual(runs[0].args, ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/STARTDECK', `/LOG=${join(dir, 'updates', 'install.log')}`]);
     assert.equal(updater.info.state, 'idle');
-    assert.match(updater.info.error ?? '', /cancelled or failed \(installer exit code 2\)/);
+    assert.equal(updater.info.error, "The update was cancelled at Windows' permission prompt. Press Update now to try again.");
+
+    await updater.install();
+    await waitFor(() => updater.info.error?.includes('failed'), 3000, 'the second installer to end');
+    assert.equal(updater.info.error, `The update failed (installer exit code 1). Its log: ${join(dir, 'updates', 'install.log')}`);
   } finally {
     await cleanup();
   }

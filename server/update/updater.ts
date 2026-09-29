@@ -22,6 +22,8 @@ const NOTES_MAX = 4000;
 const RESTART_DELAY_MS = 300;
 /** The installer stops this deck; if it is still running this long after the installer ended, something went wrong. */
 const INSTALLER_GRACE_MS = 3 * 60_000;
+/** Inno Setup's exit code for "cancelled before installing": in a silent update, No at Windows' permission prompt. */
+const INSTALLER_CANCELLED = 2;
 
 export const APPIMAGE_ASSET = 'HoudiniDeck-x86_64.AppImage';
 /** The new AppImage while it downloads: next to the running one, so it can be renamed over it. */
@@ -310,7 +312,8 @@ export class Updater extends EventEmitter<{ change: [] }> {
     this.deps.log.info(`Starting the installer for ${download.version}; it stops this deck and starts the new one`);
     const code = await (this.deps.runInstaller ?? runInstaller)(setup, installerArgs(logFile));
     // Still running: the installer ended without stopping this deck.
-    if (code !== 0) throw new Error(`The update was cancelled or failed (installer exit code ${code}). Its log: ${logFile}`);
+    if (code === INSTALLER_CANCELLED) throw new Error("The update was cancelled at Windows' permission prompt. Press Update now to try again.");
+    if (code !== 0) throw new Error(`The update failed (installer exit code ${code}). Its log: ${logFile}`);
     await delay(INSTALLER_GRACE_MS, undefined, { ref: false });
     throw new Error('The installer finished, but this deck still runs the old version. Restart HoudiniDeck.');
   }

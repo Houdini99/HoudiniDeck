@@ -237,7 +237,7 @@ The deck asks GitHub twice a day whether a new version is out. When one is, ever
 
 - **Windows installer and Linux AppImage:** open the deck in the browser **on the PC itself** (`http://localhost:3325`) and press **Update now**. Phones and tablets only show the news, since installing changes the program on the PC.
   - The deck downloads the new version from the GitHub release and checks its SHA-256 checksum before it changes anything.
-  - **Windows:** the new installer runs by itself, keeping the options you chose. Windows asks once whether it may make changes: click **Yes**. The deck then starts again (in a minimized window).
+  - **Windows:** the new installer runs by itself, keeping the options you chose. Windows usually asks once whether it may make changes (unless UAC is turned off): click **Yes**. The deck then starts again (in a minimized window).
   - **AppImage:** the new file takes the old one's place (same name, so autostart entries keep working) and the deck starts again in the background, logging to `houdinideck.log`. The AppImage's folder must be writable.
   - Your deck, settings and images stay, and open phones and tablets reconnect and reload by themselves.
   - Coming from 0.3.0 or older, update once by hand as below; from then on the deck does it.
