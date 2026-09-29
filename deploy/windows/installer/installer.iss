@@ -74,6 +74,8 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\HoudiniDeck.cmd"; WorkingDir:
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\node.exe"" enable=yes profile=private"; Flags: runhidden; Tasks: firewall
 Filename: "{app}\HoudiniDeck.cmd"; Parameters: "--open"; WorkingDir: "{app}"; Description: "Start HoudiniDeck now"; Flags: postinstall nowait skipifsilent runasoriginaluser shellexec
+; The deck's own updates run this silently with /STARTDECK: start it again (open browsers reconnect by themselves).
+Filename: "{app}\HoudiniDeck.cmd"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser shellexec runminimized; Check: HasParam('/STARTDECK')
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden; RunOnceId: "DeleteFirewallRule"

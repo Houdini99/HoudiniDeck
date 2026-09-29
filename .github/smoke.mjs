@@ -76,7 +76,7 @@ async function checkDeck(what, port) {
 
 const procs = [];
 const dataDir = mkdtempSync(join(tmpdir(), 'vsd-smoke-'));
-const deckEnv = { PORT: '3399', OBS_URL: 'ws://127.0.0.1:4456', OBS_PASSWORD: '', STREAMDECK_DATA_DIR: dataDir };
+const deckEnv = { PORT: '3399', OBS_URL: 'ws://127.0.0.1:4456', OBS_PASSWORD: '', STREAMDECK_DATA_DIR: dataDir, STREAMDECK_UPDATE_CHECK: '0' };
 // --appimage <file>: check that AppImage (the Linux release) instead of npm start and dev:mock.
 const appimageArg = process.argv.indexOf('--appimage');
 const appimage = appimageArg > 0 ? resolve(process.argv[appimageArg + 1] ?? '') : undefined;
@@ -103,7 +103,7 @@ try {
     await new Promise((r) => setTimeout(r, 2000));
 
     // npm run dev:mock (server, Vite and the mock OBS through concurrently and cross-env).
-    procs.push(start('dev', 'dev:mock'));
+    procs.push(start('dev', 'dev:mock', { STREAMDECK_UPDATE_CHECK: '0' }));
     await waitFor('dev:mock to reach the mock OBS', async () => (await health(3325)).obs === 'connected');
     await waitFor('Vite on 5173', async () => (await fetch('http://127.0.0.1:5173/')).ok);
     const proxied = await waitFor('the Vite proxy', async () => {

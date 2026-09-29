@@ -3,8 +3,12 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Packaging } from '../shared/protocol.ts';
 
 export const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
+
+/** Where the deck looks for new versions: the newest published release (GitHub leaves out drafts and pre-releases). */
+export const RELEASES_URL = 'https://api.github.com/repos/Houdini99/HoudiniDeck/releases/latest';
 
 export interface Env {
   port: number;
@@ -19,6 +23,16 @@ export interface Env {
   /** Open the deck in the browser once it runs (the Windows Start menu shortcut sets this). */
   openBrowser: boolean;
   production: boolean;
+  /** How this copy was installed (the AppImage and the Windows installer's launchers say so); decides how it updates. */
+  packaging: Packaging;
+  /** The AppImage file this copy runs from (the AppImage runtime sets APPIMAGE). */
+  appImagePath?: string;
+  /** Where to look for new releases; undefined turns update checks off (STREAMDECK_UPDATE_CHECK=0). */
+  updateFeed?: string;
+}
+
+function packaging(value: string | undefined): Packaging {
+  return value === 'appimage' || value === 'windows-installer' ? value : 'source';
 }
 
 function int(value: string | undefined, fallback: number): number {
@@ -38,6 +52,9 @@ export function readEnv(e: NodeJS.ProcessEnv = process.env): Env {
     obsPassword: e.OBS_PASSWORD,
     openBrowser: e.STREAMDECK_OPEN_BROWSER === '1',
     production: e.NODE_ENV === 'production',
+    packaging: packaging(e.STREAMDECK_PACKAGE),
+    appImagePath: e.APPIMAGE || undefined,
+    updateFeed: e.STREAMDECK_UPDATE_CHECK === '0' ? undefined : e.STREAMDECK_UPDATE_FEED || RELEASES_URL,
   };
 }
 

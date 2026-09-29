@@ -62,7 +62,8 @@ esac
 
 mkdir -p "$data"
 cd "$data"
-export STREAMDECK_DATA_DIR="$data" NODE_ENV=production
+# STREAMDECK_PACKAGE tells the deck it can update itself by replacing $APPIMAGE (the runtime sets that).
+export STREAMDECK_DATA_DIR="$data" NODE_ENV=production STREAMDECK_PACKAGE=appimage
 if [ ! -t 1 ]; then
   # Started from the desktop: nobody sees the output, so it goes into a file (the last 1 MB or so).
   log="$data/houdinideck.log"

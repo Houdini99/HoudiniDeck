@@ -33,11 +33,12 @@
   {#if prefs.compact && !store.editMode}
     <button class="handle" class:open={barOpen} aria-label={barOpen ? 'Hide menu' : 'Show menu'} onclick={() => (barOpen = !barOpen)}>
       <UiIcon name={barOpen ? 'chevron-up' : 'dots-horizontal'} />
+      {#if store.updateNotice && !barOpen}<span class="notice" title="A new version of HoudiniDeck"></span>{/if}
     </button>
   {/if}
 
   {#if store.conn !== 'open'}
-    <div class="banner">Reconnecting to the deck server…</div>
+    <div class="banner">{store.updating ? 'Updating HoudiniDeck… it’s back in a moment.' : 'Reconnecting to the deck server…'}</div>
   {:else if obs.connection !== 'connected'}
     <button class="banner warn" onclick={() => (store.settingsOpen = true)}>
       <UiIcon name={obs.connection === 'connecting' ? 'timer-sand' : 'lan-disconnect'} size={18} />
@@ -123,6 +124,15 @@
   .handle.open,
   .handle:hover {
     opacity: 1;
+  }
+  .notice {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .empty-state {
     position: absolute;

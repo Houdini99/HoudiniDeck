@@ -81,6 +81,7 @@ No account, no cloud, no app to install.
 - ♻️ **Survives restarts.**
   - Buttons follow OBS's internal IDs, so renaming a scene doesn't break them.
   - The deck reconnects on its own when OBS restarts, and open tablets reload by themselves after an update.
+  - It tells every device when a new version is out; the Windows installer and the AppImage then update with one click on the PC.
 
 ## How it works
 
@@ -232,9 +233,18 @@ For development, or to run the newest code from GitHub.
 
 ### Updating
 
-- **Windows installer:** run the newer installer. It stops the deck and keeps your deck and settings.
-- **Linux AppImage:** stop it (`--stop`), download it again with the same `curl` command, and start it. Your deck stays in `~/.local/share/HoudiniDeck`.
-- **From source:** in the deck's folder, stop it (Ctrl+C), then run:
+The deck asks GitHub twice a day whether a new version is out. When one is, every device shows an **Update** button in the top bar (in compact mode, a dot on ⋯), and **Settings → Updates** says so too. Tap it to see what's new; **Not now** hides it on that device until the next version.
+
+- **Windows installer and Linux AppImage:** open the deck in the browser **on the PC itself** (`http://localhost:3325`) and press **Update now**. Phones and tablets only show the news, since installing changes the program on the PC.
+  - The deck downloads the new version from the GitHub release and checks its SHA-256 checksum before it changes anything.
+  - **Windows:** the new installer runs by itself, keeping the options you chose. Windows asks once whether it may make changes: click **Yes**. The deck then starts again (in a minimized window).
+  - **AppImage:** the new file takes the old one's place (same name, so autostart entries keep working) and the deck starts again in the background, logging to `houdinideck.log`. The AppImage's folder must be writable.
+  - Your deck, settings and images stay, and open phones and tablets reconnect and reload by themselves.
+  - Coming from 0.3.0 or older, update once by hand as below; from then on the deck does it.
+- **By hand:**
+  - **Windows installer:** run the newer installer. It stops the deck and keeps your deck and settings.
+  - **Linux AppImage:** stop it (`--stop`), download it again with the same `curl` command, and start it. Your deck stays in `~/.local/share/HoudiniDeck`.
+- **From source** (the deck shows these steps too): in the deck's folder, stop it (Ctrl+C), then run:
 
   ```bash
   git pull
@@ -244,6 +254,8 @@ For development, or to run the newest code from GitHub.
   ```
 
 Open tablets reload by themselves.
+
+To stop the checks, turn off **Settings → Updates → Check for updates automatically**, or set `STREAMDECK_UPDATE_CHECK=0` (see [Configuration](#configuration)). **Check now** still works while it's turned off in Settings.
 
 ### Uninstalling
 
@@ -400,6 +412,7 @@ Everything can be set in the deck's Settings. These environment variables overri
 | `OBS_PASSWORD` | – | obs-websocket password. When `OBS_URL` or `OBS_PASSWORD` is set, Settings can't change the connection |
 | `STREAMDECK_DATA_DIR` | `./data` | Where the deck, settings and images are stored. The Windows installer's version always uses `%LOCALAPPDATA%\HoudiniDeck`, the AppImage `~/.local/share/HoudiniDeck` unless you set this |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `STREAMDECK_UPDATE_CHECK` | `1` | `0` never asks GitHub for new versions (not even with **Check now**) |
 
 The easiest place for them is a `.env` file (see [`.env.example`](.env.example)), on Linux and Windows alike:
 
@@ -418,6 +431,7 @@ data/                (Windows installer: %LOCALAPPDATA%\HoudiniDeck, AppImage: ~
   button-state.json  counter counts, running timers and which toggles are on
   uploads/           button images and sounds
   backups/           older deck.json versions (automatic, the last 20)
+  updates/           Windows installer: the downloaded update and install.log (the download is deleted afterwards)
 ```
 
 - **Settings → Backup** exports and imports the whole deck as a JSON file.
@@ -503,6 +517,10 @@ The deck controls your stream, so it's locked down even on a home network:
 - **Keyboard Shortcut and Type Text** buttons type into whichever window has focus, a terminal included. Keep that in mind before you pair a device you don't fully trust.
 - **The HTTP API** (`/api/buttons/…`) needs the access key, like pairing does, except from the PC itself. It presses buttons that are on the deck; it can't run anything else. Requests from other websites are refused.
 - **Sounds:** only MP3 and WAV files are accepted (checked by content), and only files the deck stored itself are played.
+- **Updates:**
+  - Any device can look for a new version, but only the browser on the PC itself can install one.
+  - The deck only installs the newest published release of this project from GitHub, and only after its download matches the SHA-256 checksum GitHub lists for it. It never installs anything without someone pressing **Update now**.
+  - Checking asks `api.github.com` twice a day, so GitHub sees your internet address. Turn it off in Settings if you like.
 
 > [!WARNING]
 > Don't forward the port to the internet. For access away from home, use a VPN (e.g. WireGuard) into your home network.
@@ -631,6 +649,7 @@ npm run typecheck   # tsc + svelte-check
   - A mock obs-websocket server on port 4456 (`server/dev/mock-obs.ts`), with scenes, sources, audio levels and outputs.
   - Its own data directory, `.data-mock/`.
   - To simulate OBS quitting and coming back, run `kill -USR2 <pid>`, or on any system `curl http://127.0.0.1:4457/toggle`. The mock prints the command at startup.
+  - It also describes a made-up newer release at `http://127.0.0.1:4457/release`. To see the update notice, start with `STREAMDECK_UPDATE_FEED=http://127.0.0.1:4457/release npm run dev:mock` (a source checkout only shows how to update; it installs nothing).
 - **Dev server and phones:** Vite serves the UI on port 5173 and proxies `/ws`, `/api`, `/icons` and `/uploads` to the Node server on 3325. The firewall blocks 5173 for other devices, so use `npm start` (port 3325) to try a phone.
 - **Plans:** what's done and what's next is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -641,12 +660,13 @@ shared/   types, zod schemas and logic used by both sides
           (actions-meta.ts = action catalog, feedback.ts = how buttons look)
 server/   Fastify HTTP + WebSocket hub, OBS bridge and state mirror, deck storage, mock OBS,
           action executors (actions/) and helpers for other programs such as playerctl (system/);
-          on Windows, one PowerShell helper does their jobs (system/windows/)
+          on Windows, one PowerShell helper does their jobs (system/windows/); updates (update/)
 web/      Svelte 5 app (deck, editor, settings)
 tests/    node:test suites
 deploy/   systemd user unit, the Linux AppImage (linux/appimage/); for Windows a start script and the installer (windows/installer/)
 docs/     roadmap and the pictures in this README
-.github/  CI: tests and a start-up check on Linux and Windows; building and trying the Windows installer and the Linux AppImage
+.github/  CI: tests and a start-up check on Linux and Windows; building and trying the Windows installer and the Linux AppImage,
+          including updating themselves (update-test.mjs)
 ```
 
 ### Adding a new kind of button action

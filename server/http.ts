@@ -25,6 +25,8 @@ export interface HttpDeps {
   settingsStore: SettingsStore;
   /** For pressing buttons through the HTTP API. */
   dispatcher: Pick<Dispatcher, 'press'>;
+  /** The running version (in /api/health). */
+  version: string;
   getDeck: () => Deck;
   labelCtx: () => LabelCtx;
   log: Logger;
@@ -51,7 +53,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   registerUploadRoutes(app, { dataDir: env.dataDir, settingsStore });
   registerMediaRoutes(app, media);
   await registerButtonApi(app, { getDeck: deps.getDeck, dispatcher: deps.dispatcher, settingsStore, labelCtx: deps.labelCtx, log });
-  app.get('/api/health', async () => ({ ok: true, obs: bridge.state.connection, clients: hub.connectedCount }));
+  app.get('/api/health', async () => ({ ok: true, version: deps.version, obs: bridge.state.connection, clients: hub.connectedCount }));
 
   if (existsSync(join(env.webDist, 'index.html'))) {
     await app.register(fastifyStatic, {

@@ -1,4 +1,5 @@
-# Builds the Linux AppImage and tries it (runs the deck from it against the mock OBS, then --stop).
+# Builds the Linux AppImage and tries it (runs the deck from it against the mock OBS, then --stop, then
+# lets a copy update itself from a made-up newer release).
 # Like the Windows installer, it runs only when a release is published, and attaches the AppImage to
 # that release. To try changes without a release, start it by hand (Actions → Linux AppImage → Run
 # workflow, or `gh workflow run linux-appimage.yml --ref <branch>`); the AppImage is then a download
@@ -29,6 +30,10 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: node .github/smoke.mjs --appimage dist-appimage/HoudiniDeck-x86_64.AppImage
+      - name: Let a copy of it update itself
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: node .github/update-test.mjs --appimage dist-appimage/HoudiniDeck-x86_64.AppImage
       - uses: actions/upload-artifact@v4
         with:
           name: HoudiniDeck-AppImage
