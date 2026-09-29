@@ -128,7 +128,7 @@ Download `HoudiniDeck-Setup-<version>.exe` from the [latest release](https://git
   - start HoudiniDeck when you log in;
   - a desktop icon.
 - **Start it** from the Start menu (**HoudiniDeck**); it opens in your browser.
-  - The terminal window that comes with it is the deck itself: closing it stops the deck.
+  - The terminal window that comes with it is the deck itself: closing it stops the deck, and so does **Settings → Stop HoudiniDeck** in the browser on the PC.
   - Starting it again while it runs just opens the browser.
 - **Your deck, settings and images** live in `%LOCALAPPDATA%\HoudiniDeck` (Start menu → **HoudiniDeck data folder**).
 - **Programs:** media keys, system volume and keyboard shortcuts use Windows PowerShell, which every Windows has. The GPU tiles use `nvidia-smi`, which comes with the NVIDIA driver.
@@ -150,7 +150,7 @@ One file that runs on most distributions: x86_64 with glibc 2.28 or newer (from 
    - **Double-click it** in the file manager. The deck starts in the background and opens in your browser; doing it again while it runs just opens the browser.
    - **Or run it in a terminal** (`~/Applications/HoudiniDeck-x86_64.AppImage`). It prints the addresses and the pairing QR code there, and Ctrl+C stops it.
 
-- **Stop it:** `~/Applications/HoudiniDeck-x86_64.AppImage --stop`.
+- **Stop it:** `~/Applications/HoudiniDeck-x86_64.AppImage --stop`, or **Settings → Stop HoudiniDeck** in the browser on the PC.
 - **Your deck, settings and images** live in `~/.local/share/HoudiniDeck` (`--data` opens it). A `.env` file goes there too. Started from the desktop, the deck writes its messages to `houdinideck.log` in that folder.
 - **Coming from a source install?** Stop both, then copy what's in its `data/` folder into `~/.local/share/HoudiniDeck`.
 - **Programs:** the buttons that act on the PC use the same [programs](#programs-for-the-pc-buttons-linux) as a source install.
@@ -321,6 +321,7 @@ Phones and tablets need the access key, which pairing gives them. The PC's own b
   - Add a Play Sound button and upload an MP3 or WAV.
   - It plays on the PC's default speakers, so OBS hears it through Desktop Audio (and so do you).
   - "Listen here" in the editor plays it on the device you're editing on.
+- **Stop the deck:** **Settings → Stop HoudiniDeck**, in the browser on the PC itself (a phone couldn't start it again). Every device then says it was stopped, and reconnects by itself once the deck runs again.
 - **Live scene pictures:** tick "Show a live picture of the scene" on a Switch Scene button. OBS renders a small picture every 2 seconds while the button is on some screen, which costs it a little GPU and CPU.
 - **This device:** Settings → This device sets, for that device alone:
   - the page it opens on;
@@ -521,6 +522,7 @@ The deck controls your stream, so it's locked down even on a home network:
   - Any device can look for a new version, but only the browser on the PC itself can install one.
   - The deck only installs the newest published release of this project from GitHub, and only after its download matches the SHA-256 checksum GitHub lists for it. It never installs anything without someone pressing **Update now**.
   - Checking asks `api.github.com` twice a day, so GitHub sees your internet address. Turn it off in Settings if you like.
+- **Stopping the deck** from Settings also works only in the browser on the PC itself.
 
 > [!WARNING]
 > Don't forward the port to the internet. For access away from home, use a VPN (e.g. WireGuard) into your home network.

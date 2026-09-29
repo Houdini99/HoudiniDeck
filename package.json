@@ -1,6 +1,6 @@
 {
   "name": "virtual-streamdeck",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Self-hosted, browser-based Stream Deck for OBS. Control OBS from any device on your LAN.",
   "type": "module",

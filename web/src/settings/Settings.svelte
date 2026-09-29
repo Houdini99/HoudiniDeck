@@ -108,6 +108,25 @@
     }
   }
 
+  /** How to start the deck again, by how it was installed. */
+  const startAgain = $derived(
+    {
+      'windows-installer': 'Start it again from the Start menu or the desktop icon.',
+      appimage: 'Start it again by opening the AppImage.',
+      source: 'Start it again with npm start (or systemctl --user start virtual-streamdeck).',
+    }[store.info?.update.packaging ?? 'source'],
+  );
+
+  async function stopDeck(): Promise<void> {
+    if (!confirm(`Stop HoudiniDeck? Every phone and tablet loses the deck until it runs again (OBS keeps running). ${startAgain}`)) return;
+    try {
+      await store.request({ t: 'settings', action: 'stop' });
+      close();
+    } catch (err) {
+      store.toast((err as Error).message, 'error');
+    }
+  }
+
   function showUpdate(): void {
     close();
     store.updateOpen = true;
@@ -345,6 +364,15 @@
           {/if}
         </section>
       {/if}
+
+      <section class="group">
+        <h3 class="section-title">Stop HoudiniDeck</h3>
+        <p class="hint">Ends the deck on this PC; every device disconnects. {startAgain}</p>
+        <div><button class="btn danger" disabled={!store.local} onclick={stopDeck}><UiIcon name="power" size={18} /> Stop HoudiniDeck</button></div>
+        {#if !store.local}
+          <p class="hint">Only the browser on the PC itself (http://localhost:{location.port || '80'}) can stop it, since nobody could start it again from here.</p>
+        {/if}
+      </section>
 
       <section class="group about">
         <h3 class="section-title">About</h3>

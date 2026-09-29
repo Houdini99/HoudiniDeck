@@ -98,7 +98,9 @@ export type ServerMsg =
   | { t: 'thumbs'; images: Record<string, string> }
   | { t: 'result'; reqId: number; ok: true; data?: unknown }
   | { t: 'result'; reqId: number; ok: false; error: string }
-  | { t: 'toast'; level: ToastLevel; text: string; buttonId?: string };
+  | { t: 'toast'; level: ToastLevel; text: string; buttonId?: string }
+  /** The deck was stopped from Settings on the PC; it's gone until someone starts it again there. */
+  | { t: 'stopped' };
 
 /** WebSocket close codes used by the server. */
 export const CLOSE = {

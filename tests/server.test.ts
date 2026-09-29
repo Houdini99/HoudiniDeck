@@ -282,6 +282,38 @@ test('updates: every browser hears about a new version, only the PC itself may i
   }
 });
 
+test('only the PC itself can stop the deck; every browser is told', async () => {
+  const tmp = await tempDir();
+  let stops = 0;
+  const env = readEnv({ STREAMDECK_UPDATE_CHECK: '0' });
+  const second = await startApp({ ...env, host: '127.0.0.1', port: 0, dataDir: tmp.dir, obsUrl: mock.url, obsPassword: '' }, { stop: () => stops++ });
+  try {
+    const pc = connect(`localhost:${second.port}`, undefined, second.port);
+    await pc.next('init');
+    const phone = connect('192.168.1.20:3325', undefined, second.port);
+    await phone.next('hello');
+    phone.ws.send(JSON.stringify({ t: 'auth', key: second.settingsStore.settings.accessKey }));
+    await phone.next('init');
+
+    const refused = await phone.request({ t: 'settings', action: 'stop' });
+    assert.match(refused.ok ? '' : refused.error, /only be stopped in the browser on the PC itself/);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(stops, 0);
+    assert.ok(!phone.messages.some((m) => m.t === 'stopped'));
+
+    const stopped = await pc.request({ t: 'settings', action: 'stop' });
+    assert.ok(stopped.ok);
+    await phone.next('stopped');
+    await pc.next('stopped');
+    await waitFor(() => stops === 1, 3000, 'the deck to stop');
+    pc.ws.close();
+    phone.ws.close();
+  } finally {
+    await second.close();
+    await tmp.cleanup();
+  }
+});
+
 test('changing the OBS address without a password drops the saved one', async () => {
   // This app's OBS connection comes from env vars, so exercise the rule on a second instance.
   const tmp = await tempDir();

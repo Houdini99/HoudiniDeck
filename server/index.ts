@@ -64,7 +64,10 @@ async function main(): Promise<void> {
     process.exit(0);
   };
   try {
-    app = await startApp(env, { relaunch: (next) => void shutdown('Updated', next) });
+    app = await startApp(env, {
+      relaunch: (next) => void shutdown('Updated', next),
+      stop: () => void shutdown('Stopped from Settings'),
+    });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EADDRINUSE') {

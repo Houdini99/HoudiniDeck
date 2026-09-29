@@ -59,6 +59,8 @@ export interface HubDeps {
   /** Lists KDE's global shortcuts for the editor. */
   kdeShortcuts: () => Promise<KdeComponent[]>;
   dispatcher: Dispatcher;
+  /** Ends the deck (Settings → Stop HoudiniDeck). */
+  stop: () => void;
   buildId: string;
   info: () => ServerInfo;
   log: Logger;
@@ -298,9 +300,18 @@ export class Hub {
     };
   }
 
-  private async settingsAction(client: Client, action: 'get' | 'rotateKey' | 'reconnectObs'): Promise<unknown> {
-    const { settingsStore, bridge, log } = this.deps;
+  private async settingsAction(client: Client, action: 'get' | 'rotateKey' | 'reconnectObs' | 'stop'): Promise<unknown> {
+    const { settingsStore, bridge, log, env } = this.deps;
     switch (action) {
+      case 'stop': {
+        // A phone could stop the deck, but nobody could start it again from there.
+        if (!client.trustedLocal) throw new OpError(`The deck can only be stopped in the browser on the PC itself (http://localhost:${env.publicPort}).`);
+        log.info('Stopped from Settings on this PC');
+        this.broadcast({ t: 'stopped' });
+        // After this answer has gone out.
+        setTimeout(() => this.deps.stop(), 100);
+        return {};
+      }
       case 'get':
         return this.settingsView(client);
       case 'reconnectObs':

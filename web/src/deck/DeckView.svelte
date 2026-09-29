@@ -38,7 +38,15 @@
   {/if}
 
   {#if store.conn !== 'open'}
-    <div class="banner">{store.updating ? 'Updating HoudiniDeck… it’s back in a moment.' : 'Reconnecting to the deck server…'}</div>
+    <div class="banner">
+      {#if store.updating}
+        Updating HoudiniDeck… it’s back in a moment.
+      {:else if store.stopped}
+        HoudiniDeck was stopped on the PC. This page reconnects once it runs again.
+      {:else}
+        Reconnecting to the deck server…
+      {/if}
+    </div>
   {:else if obs.connection !== 'connected'}
     <button class="banner warn" onclick={() => (store.settingsOpen = true)}>
       <UiIcon name={obs.connection === 'connecting' ? 'timer-sand' : 'lan-disconnect'} size={18} />
