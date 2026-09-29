@@ -379,7 +379,8 @@ export const ClientMsgSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('fader'), pageId: Id, buttonId: Id, pos: z.number().min(0).max(1) }),
   z.object({ t: z.literal('op'), reqId: ReqId, op: DeckOpSchema }),
   z.object({ t: z.literal('query'), reqId: ReqId, q: z.enum(['hotkeys', 'mediaPlayers', 'kdeShortcuts']) }),
-  z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs']) }),
+  /** `stop` ends the deck on the PC (refused unless it comes from the PC's own browser). */
+  z.object({ t: z.literal('settings'), reqId: ReqId, action: z.enum(['get', 'rotateKey', 'reconnectObs', 'stop']) }),
   z.object({ t: z.literal('settings.obs'), reqId: ReqId, url: ObsUrlSchema, password: z.string().max(200).optional() }),
   /** Allow or forbid Run Command buttons (refused unless it comes from the PC's own browser). */
   z.object({ t: z.literal('settings.commands'), reqId: ReqId, enabled: z.boolean() }),

@@ -105,6 +105,16 @@ Every device hears about a new release; the PC's own browser can install it with
 - **UI:** a blue **Update x.y.z** pill in the top bar (progress while it runs; in compact mode a dot on ⋯), `web/src/update/UpdateDialog.svelte` (notes, link, Update now / the "open it on the PC" hint / the source steps / "not attached yet"), and **Settings → Updates** (status, Check now, the automatic-check switch). **Not now** hides the pill on that device until the next version (`prefs.skippedUpdate`). While the deck restarts, the banner and splash say "Updating HoudiniDeck…"; a new `buildId` reloads the page as before. Updating while OBS streams or records asks first.
 - **Tests:** `tests/update.test.ts` (fake GitHub and fake installer: versions, checks, ETag, errors, downloads against a local HTTP server, replacing an AppImage, the Windows installer's arguments and a cancelled one, clean-up, `readEnv`), plus a case in `server.test.ts` (who may install, `init.local`, broadcasts). `.github/update-test.mjs` serves a made-up v99.0.0 whose download is the real file, and makes a real deck install it: after the AppImage smoke test in `linux-appimage.yml`, and in `.github/test-installer.ps1` on the Windows runner (whose UAC is off).
 
+## Stop button (0.4.1, 2026‑09‑29)
+
+**Settings → Stop HoudiniDeck** ends the deck, built on the branch `feature/stop-server`.
+
+- `{ t: 'settings', action: 'stop' }`, refused unless the browser is trusted-local (a phone could stop the deck but not start it again). The hub broadcasts `{ t: 'stopped' }`, answers, and 100 ms later calls `stop`: `startApp`'s option, which `index.ts` points at the same `shutdown()` as SIGTERM (browsers get close code 1012, button states are saved, exit code 0). Without it (tests) it only logs.
+- Exit code 0 ends every launcher cleanly: the installer's console window closes (it only pauses on errors), the AppImage ends, and the systemd unit (`Restart=on-failure`) stays stopped.
+- The browsers keep `store.stopped` until the next `init`: the banner and splash say "HoudiniDeck was stopped on the PC" while the socket keeps retrying, so the page comes back by itself once the deck runs again. The Settings hint and the confirm say how to start it again, by `ServerInfo.update.packaging`.
+- **Test:** `server.test.ts` (a paired device is refused; the PC's stop reaches every browser and calls `stop` once). Checked in `dev:mock`: the server exits, the banner shows, and the page reconnects after `node --watch` restarts it.
+- [ ] **On the real PCs:** the installer's window closes on Windows, and a Dolphin-started AppImage ends (`pgrep -f houdinideck` finds nothing).
+
 ## Phase 3: actions beyond OBS
 
 Goal: buttons that do things other than OBS (commands, webhooks, media keys, system volume, hotkeys, macros, Discord) plus a system-stats tile.

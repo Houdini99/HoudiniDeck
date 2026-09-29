@@ -63,8 +63,10 @@ class Store {
   /** Media players and other state from outside OBS. */
   ext = $state.raw<ExtState>(emptyExtState());
   info = $state.raw<ServerInfo | null>(null);
-  /** This browser runs on the PC itself (it may install updates). */
+  /** This browser runs on the PC itself (it may install updates and stop the deck). */
   local = $state(false);
+  /** The deck was stopped from Settings on the PC; this page reconnects once it runs again. */
+  stopped = $state(false);
   meters = $state.raw<Record<string, number>>({});
   /** Live pictures of the scenes that scene buttons on screen show (data: URLs by scene name). */
   thumbs = $state.raw<Record<string, string>>({});
@@ -155,6 +157,7 @@ class Store {
         this.ext = msg.ext;
         this.info = msg.info;
         this.local = msg.local;
+        this.stopped = false;
         this.pairing = null;
         if (!this.pageId) this.pageId = prefs.startPage || prefs.lastPage;
         this.meterInterest.flush();
@@ -184,6 +187,9 @@ class Store {
       case 'toast':
         this.toast(msg.text, msg.level);
         if (msg.buttonId) this.flashes[msg.buttonId] = Date.now();
+        break;
+      case 'stopped':
+        this.stopped = true;
         break;
       case 'authError':
         if (msg.reason !== 'timeout') clearKey();

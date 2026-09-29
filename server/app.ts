@@ -64,6 +64,8 @@ async function readBuildId(webDist: string): Promise<string> {
 export interface StartOptions {
   /** Close the deck and start the new version in its place (index.ts does that; tests pass a fake). */
   relaunch?: (next: Relaunch) => void;
+  /** Close the deck and end the program (Settings → Stop HoudiniDeck; index.ts does that, tests pass a fake). */
+  stop?: () => void;
 }
 
 export async function startApp(env: Env, options: StartOptions = {}): Promise<App> {
@@ -150,6 +152,7 @@ export async function startApp(env: Env, options: StartOptions = {}): Promise<Ap
     updater,
     kdeShortcuts: async () => (process.platform === 'linux' ? listKdeShortcuts(runProcess) : []),
     dispatcher,
+    stop: options.stop ?? (() => log.warn('Stopping is only possible when the deck runs through server/index.ts')),
     buildId: await readBuildId(env.webDist),
     info: () => ({
       version,

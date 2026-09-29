@@ -59,7 +59,7 @@
   <main class="splash">
     <UiIcon name="view-grid" size={40} />
     <p>
-      {#if store.updating}Updating HoudiniDeck… it’s back in a moment.{:else}{store.conn === 'closed' ? 'Can’t reach the deck server. Retrying…' : 'Connecting…'}{/if}
+      {#if store.updating}Updating HoudiniDeck… it’s back in a moment.{:else if store.stopped}HoudiniDeck was stopped on the PC. This page reconnects once it runs again.{:else}{store.conn === 'closed' ? 'Can’t reach the deck server. Retrying…' : 'Connecting…'}{/if}
     </p>
   </main>
 {:else}
